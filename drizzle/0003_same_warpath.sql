@@ -1,0 +1,1 @@
+ALTER TABLE "onprem_deployments" ADD COLUMN "license" jsonb;
