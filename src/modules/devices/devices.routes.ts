@@ -1,0 +1,309 @@
+import { FastifyInstance } from 'fastify';
+import { list, getById, create, update, remove, getAuditLog, stats } from './devices.controller.js';
+import { authenticate } from '../../middleware/authenticate.js';
+import { authorize } from '../../middleware/authorize.js';
+
+// Full device schema for details endpoint
+const deviceSchema = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    name: { type: 'string' },
+    serialNumber: { type: 'string', nullable: true },
+    type: { type: 'string' },
+    status: { type: 'string' },
+    manufacturer: { type: 'string', nullable: true },
+    model: { type: 'string', nullable: true },
+    location: { type: 'string', nullable: true },
+    description: { type: 'string', nullable: true },
+    purpose: { type: 'string', nullable: true },
+    assignedTo: { type: 'string', nullable: true },
+    metadata: { type: 'object', nullable: true, additionalProperties: true },
+    registeredBy: { type: 'string', nullable: true },
+    lastUpdatedBy: { type: 'string', nullable: true },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
+  },
+};
+
+// Optimized schema for list endpoint (only fields needed for table display)
+const deviceListItemSchema = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    name: { type: 'string' },
+    status: { type: 'string' },
+    model: { type: 'string', nullable: true },
+    platform: { type: 'string', nullable: true },
+    purpose: { type: 'string', nullable: true },
+    assignedTo: { type: 'string', nullable: true },
+  },
+};
+
+export async function deviceRoutes(app: FastifyInstance) {
+  // Get device stats
+  app.get(
+    '/stats',
+    {
+      preHandler: [authenticate, authorize('read', 'Device')],
+      schema: {
+        tags: ['Devices'],
+        summary: 'Get device statistics',
+        security: [{ bearerAuth: [] }],
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              inInventory: { type: 'integer' },
+              outForRepair: { type: 'integer' },
+              toBeSold: { type: 'integer' },
+              inactive: { type: 'integer' },
+            },
+          },
+        },
+      },
+    },
+    stats
+  );
+
+  // List devices
+  app.get(
+    '/',
+    {
+      preHandler: [authenticate, authorize('read', 'Device')],
+      schema: {
+        tags: ['Devices'],
+        summary: 'List devices',
+        security: [{ bearerAuth: [] }],
+        querystring: {
+          type: 'object',
+          properties: {
+            page: { type: 'integer', minimum: 1, default: 1 },
+            limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+            search: { type: 'string' },
+            type: {
+              type: 'string',
+              enum: ['server', 'workstation', 'mobile', 'iot', 'network', 'other'],
+            },
+            status: {
+              type: 'string',
+              enum: ['active', 'inactive', 'maintenance', 'decommissioned'],
+            },
+            sortBy: {
+              type: 'string',
+              enum: ['name', 'createdAt', 'updatedAt', 'status', 'type'],
+              default: 'createdAt',
+            },
+            sortOrder: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
+            platform: { type: 'string' },
+            purpose: { type: 'string' },
+            assignedTo: { type: 'string' },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              data: { type: 'array', items: deviceListItemSchema },
+              pagination: {
+                type: 'object',
+                properties: {
+                  page: { type: 'integer' },
+                  limit: { type: 'integer' },
+                  total: { type: 'integer' },
+                  totalPages: { type: 'integer' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    list
+  );
+
+  // Get device by ID
+  app.get(
+    '/:id',
+    {
+      preHandler: [authenticate, authorize('read', 'Device')],
+      schema: {
+        tags: ['Devices'],
+        summary: 'Get device by ID',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+          },
+        },
+        response: {
+          200: deviceSchema,
+        },
+      },
+    },
+    getById
+  );
+
+  // Create device
+  app.post(
+    '/',
+    {
+      preHandler: [authenticate, authorize('create', 'Device')],
+      schema: {
+        tags: ['Devices'],
+        summary: 'Create device',
+        security: [{ bearerAuth: [] }],
+        body: {
+          type: 'object',
+          required: ['name', 'type'],
+          properties: {
+            name: { type: 'string', minLength: 1, maxLength: 255 },
+            serialNumber: { type: 'string', maxLength: 100 },
+            type: {
+              type: 'string',
+              enum: ['server', 'workstation', 'mobile', 'iot', 'network', 'other'],
+            },
+            status: {
+              type: 'string',
+              enum: ['active', 'inactive', 'maintenance', 'decommissioned'],
+              default: 'active',
+            },
+            manufacturer: { type: 'string', maxLength: 100 },
+            model: { type: 'string', maxLength: 100 },
+            location: { type: 'string', maxLength: 255 },
+            description: { type: 'string' },
+            purpose: { type: 'string', maxLength: 100 },
+            assignedTo: { type: 'string', maxLength: 255 },
+            metadata: { type: 'object' },
+          },
+        },
+        response: {
+          201: deviceSchema,
+        },
+      },
+    },
+    create
+  );
+
+  // Update device
+  app.put(
+    '/:id',
+    {
+      preHandler: [authenticate, authorize('update', 'Device')],
+      schema: {
+        tags: ['Devices'],
+        summary: 'Update device',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+          },
+        },
+        body: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', minLength: 1, maxLength: 255 },
+            serialNumber: { type: 'string', maxLength: 100 },
+            type: {
+              type: 'string',
+              enum: ['server', 'workstation', 'mobile', 'iot', 'network', 'other'],
+            },
+            status: {
+              type: 'string',
+              enum: ['active', 'inactive', 'maintenance', 'decommissioned'],
+            },
+            manufacturer: { type: 'string', maxLength: 100 },
+            model: { type: 'string', maxLength: 100 },
+            location: { type: 'string', maxLength: 255 },
+            description: { type: 'string' },
+            purpose: { type: 'string', maxLength: 100 },
+            assignedTo: { type: 'string', maxLength: 255 },
+            metadata: { type: 'object' },
+          },
+        },
+        response: {
+          200: deviceSchema,
+        },
+      },
+    },
+    update
+  );
+
+  // Delete device
+  app.delete(
+    '/:id',
+    {
+      preHandler: [authenticate, authorize('delete', 'Device')],
+      schema: {
+        tags: ['Devices'],
+        summary: 'Delete device',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              message: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    remove
+  );
+
+  // Get device audit log
+  app.get(
+    '/:id/audit',
+    {
+      preHandler: [authenticate, authorize('read', 'Device')],
+      schema: {
+        tags: ['Devices'],
+        summary: 'Get device audit log',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              data: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    userId: { type: 'string', nullable: true },
+                    module: { type: 'string' },
+                    action: { type: 'string' },
+                    entityType: { type: 'string', nullable: true },
+                    entityId: { type: 'string', nullable: true },
+                    entityName: { type: 'string', nullable: true },
+                    changes: { type: 'object', nullable: true },
+                    createdAt: { type: 'string', format: 'date-time' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    getAuditLog
+  );
+}

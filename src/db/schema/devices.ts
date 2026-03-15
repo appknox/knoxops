@@ -1,0 +1,48 @@
+import { pgTable, uuid, varchar, timestamp, text, jsonb, pgEnum } from 'drizzle-orm/pg-core';
+import { users } from './users.js';
+
+// Device status enum
+export const deviceStatusEnum = pgEnum('device_status', [
+  'active',
+  'inactive',
+  'maintenance',
+  'decommissioned',
+]);
+
+// Device type enum
+export const deviceTypeEnum = pgEnum('device_type', [
+  'server',
+  'workstation',
+  'mobile',
+  'iot',
+  'network',
+  'other',
+]);
+
+// Devices table
+export const devices = pgTable('devices', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 255 }).notNull(),
+  serialNumber: varchar('serial_number', { length: 100 }).unique(),
+  type: deviceTypeEnum('type').notNull(),
+  status: deviceStatusEnum('status').notNull().default('active'),
+  manufacturer: varchar('manufacturer', { length: 100 }),
+  model: varchar('model', { length: 100 }),
+  location: varchar('location', { length: 255 }),
+  description: text('description'),
+  // Operational fields (direct columns)
+  purpose: varchar('purpose', { length: 100 }),
+  assignedTo: varchar('assigned_to', { length: 255 }),
+  // Technical specs stored in metadata (includes ipAddress, macAddress, cpuArch, rom, platform, etc.)
+  metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+  registeredBy: uuid('registered_by').references(() => users.id),
+  lastUpdatedBy: uuid('last_updated_by').references(() => users.id),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+// Types
+export type Device = typeof devices.$inferSelect;
+export type NewDevice = typeof devices.$inferInsert;
+export type DeviceStatus = (typeof deviceStatusEnum.enumValues)[number];
+export type DeviceType = (typeof deviceTypeEnum.enumValues)[number];

@@ -1,0 +1,252 @@
+import { eq, and, or, ilike, sql, desc, asc } from 'drizzle-orm';
+import { db } from '../../db/index.js';
+import { devices, Device, NewDevice, DeviceStatus, DeviceType } from '../../db/schema/index.js';
+import { NotFoundError, ConflictError } from '../../middleware/errorHandler.js';
+import { CreateDeviceInput, UpdateDeviceInput, ListDevicesQuery } from './devices.schema.js';
+
+// Optimized list item type (only fields needed for table display)
+export interface DeviceListItem {
+  id: string;
+  name: string;
+  status: string;
+  model: string | null;
+  platform: string | null;
+  purpose: string | null;
+  assignedTo: string | null;
+}
+
+export interface PaginatedDevices {
+  data: DeviceListItem[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export async function listDevices(query: ListDevicesQuery): Promise<PaginatedDevices> {
+  const { page, limit, search, type, status, platform, purpose, assignedTo, sortBy, sortOrder } = query;
+  const offset = (page - 1) * limit;
+
+  const conditions = [];
+
+  if (search) {
+    conditions.push(
+      or(
+        ilike(devices.name, `%${search}%`),
+        ilike(devices.serialNumber, `%${search}%`),
+        ilike(devices.manufacturer, `%${search}%`),
+        ilike(devices.model, `%${search}%`),
+        ilike(devices.location, `%${search}%`)
+      )
+    );
+  }
+
+  if (type) {
+    conditions.push(eq(devices.type, type));
+  }
+
+  if (status) {
+    conditions.push(eq(devices.status, status));
+  }
+
+  // Direct column filtering for operational fields
+  if (purpose) {
+    conditions.push(eq(devices.purpose, purpose));
+  }
+
+  if (assignedTo) {
+    conditions.push(eq(devices.assignedTo, assignedTo));
+  }
+
+  // Metadata filtering using JSONB operators (technical specs)
+  if (platform) {
+    conditions.push(sql`${devices.metadata}->>'platform' = ${platform}`);
+  }
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const sortColumn = {
+    name: devices.name,
+    createdAt: devices.createdAt,
+    updatedAt: devices.updatedAt,
+    status: devices.status,
+    type: devices.type,
+  }[sortBy];
+
+  const orderFn = sortOrder === 'asc' ? asc : desc;
+
+  // Select only fields needed for list display (optimized query)
+  const [data, countResult] = await Promise.all([
+    db
+      .select({
+        id: devices.id,
+        name: devices.name,
+        status: devices.status,
+        model: devices.model,
+        platform: sql<string | null>`${devices.metadata}->>'platform'`,
+        purpose: devices.purpose,
+        assignedTo: devices.assignedTo,
+      })
+      .from(devices)
+      .where(whereClause)
+      .orderBy(orderFn(sortColumn))
+      .limit(limit)
+      .offset(offset),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(devices)
+      .where(whereClause),
+  ]);
+
+  const total = countResult[0]?.count || 0;
+
+  return {
+    data,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+}
+
+export async function getDeviceById(id: string): Promise<Device> {
+  const device = await db.query.devices.findFirst({
+    where: eq(devices.id, id),
+  });
+
+  if (!device) {
+    throw new NotFoundError('Device not found');
+  }
+
+  return device;
+}
+
+export async function createDevice(input: CreateDeviceInput, userId: string): Promise<Device> {
+  // Check for duplicate serial number
+  if (input.serialNumber) {
+    const existing = await db.query.devices.findFirst({
+      where: eq(devices.serialNumber, input.serialNumber),
+    });
+
+    if (existing) {
+      throw new ConflictError('A device with this serial number already exists');
+    }
+  }
+
+  const [device] = await db
+    .insert(devices)
+    .values({
+      ...input,
+      registeredBy: userId,
+      lastUpdatedBy: userId,
+    })
+    .returning();
+
+  return device;
+}
+
+export async function updateDevice(
+  id: string,
+  input: UpdateDeviceInput,
+  userId: string
+): Promise<{ before: Device; after: Device }> {
+  const before = await getDeviceById(id);
+
+  // Check for duplicate serial number
+  if (input.serialNumber && input.serialNumber !== before.serialNumber) {
+    const existing = await db.query.devices.findFirst({
+      where: and(eq(devices.serialNumber, input.serialNumber), sql`${devices.id} != ${id}`),
+    });
+
+    if (existing) {
+      throw new ConflictError('A device with this serial number already exists');
+    }
+  }
+
+  const [after] = await db
+    .update(devices)
+    .set({
+      ...input,
+      lastUpdatedBy: userId,
+      updatedAt: new Date(),
+    })
+    .where(eq(devices.id, id))
+    .returning();
+
+  return { before, after };
+}
+
+export async function deleteDevice(id: string): Promise<Device> {
+  const device = await getDeviceById(id);
+
+  await db.delete(devices).where(eq(devices.id, id));
+
+  return device;
+}
+
+export async function updateDeviceStatus(
+  id: string,
+  status: DeviceStatus,
+  userId: string
+): Promise<{ before: Device; after: Device }> {
+  const before = await getDeviceById(id);
+
+  const [after] = await db
+    .update(devices)
+    .set({
+      status,
+      lastUpdatedBy: userId,
+      updatedAt: new Date(),
+    })
+    .where(eq(devices.id, id))
+    .returning();
+
+  return { before, after };
+}
+
+export interface DeviceStats {
+  inInventory: number;
+  outForRepair: number;
+  toBeSold: number;
+  inactive: number;
+}
+
+export async function getDeviceStats(): Promise<DeviceStats> {
+  const result = await db
+    .select({
+      status: devices.status,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(devices)
+    .groupBy(devices.status);
+
+  const stats: DeviceStats = {
+    inInventory: 0,
+    outForRepair: 0,
+    toBeSold: 0,
+    inactive: 0,
+  };
+
+  for (const row of result) {
+    switch (row.status) {
+      case 'active':
+        stats.inInventory = row.count;
+        break;
+      case 'maintenance':
+        stats.outForRepair = row.count;
+        break;
+      case 'decommissioned':
+        stats.toBeSold = row.count;
+        break;
+      case 'inactive':
+        stats.inactive = row.count;
+        break;
+    }
+  }
+
+  return stats;
+}
