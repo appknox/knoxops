@@ -53,6 +53,13 @@ export class ConflictError extends AppError {
   }
 }
 
+export class TooManyRequestsError extends AppError {
+  constructor(message: string = 'Too many requests') {
+    super(message, 429, 'TOO_MANY_REQUESTS');
+    this.name = 'TooManyRequestsError';
+  }
+}
+
 export function errorHandler(
   error: FastifyError | ApiError | ZodError,
   _request: FastifyRequest,

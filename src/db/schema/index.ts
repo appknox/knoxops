@@ -32,7 +32,7 @@ export { devices, deviceStatusEnum, deviceTypeEnum } from './devices.js';
 export type { Device, NewDevice, DeviceStatus, DeviceType } from './devices.js';
 
 // On-prem
-export { onpremDeployments, onpremStatusHistory, onpremComments, deploymentStatusEnum } from './onprem.js';
+export { onpremDeployments, onpremStatusHistory, onpremComments, onpremDocuments, deploymentStatusEnum, documentCategoryEnum } from './onprem.js';
 export type {
   OnpremDeployment,
   NewOnpremDeployment,
@@ -40,5 +40,8 @@ export type {
   NewOnpremStatusHistory,
   OnpremComment,
   NewOnpremComment,
+  OnpremDocument,
+  NewOnpremDocument,
   DeploymentStatus,
+  DocumentCategory,
 } from './onprem.js';

@@ -166,6 +166,23 @@ export const onpremComments = pgTable('onprem_comments', {
   isDeleted: boolean('is_deleted').default(false),
 });
 
+// Document category enum
+export const documentCategoryEnum = pgEnum('document_category', ['rfp', 'other']);
+
+// On-prem documents table
+export const onpremDocuments = pgTable('onprem_documents', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  deploymentId: uuid('deployment_id')
+    .notNull()
+    .references(() => onpremDeployments.id, { onDelete: 'cascade' }),
+  category: documentCategoryEnum('category').notNull(),
+  fileName: varchar('file_name', { length: 255 }).notNull(),
+  fileUrl: text('file_url').notNull(),
+  mimeType: varchar('mime_type', { length: 255 }),
+  fileSize: integer('file_size'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 // Types
 export type OnpremDeployment = typeof onpremDeployments.$inferSelect;
 export type NewOnpremDeployment = typeof onpremDeployments.$inferInsert;
@@ -173,4 +190,7 @@ export type OnpremStatusHistory = typeof onpremStatusHistory.$inferSelect;
 export type NewOnpremStatusHistory = typeof onpremStatusHistory.$inferInsert;
 export type OnpremComment = typeof onpremComments.$inferSelect;
 export type NewOnpremComment = typeof onpremComments.$inferInsert;
+export type OnpremDocument = typeof onpremDocuments.$inferSelect;
+export type NewOnpremDocument = typeof onpremDocuments.$inferInsert;
 export type DeploymentStatus = (typeof deploymentStatusEnum.enumValues)[number];
+export type DocumentCategory = (typeof documentCategoryEnum.enumValues)[number];

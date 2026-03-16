@@ -1,12 +1,14 @@
 import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
+import crypto from 'crypto';
 import { pipeline } from 'stream/promises';
 import type { MultipartFile } from '@fastify/multipart';
 
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
 const PREREQUISITES_DIR = path.join(UPLOADS_DIR, 'prerequisites');
 const SSL_CERTS_DIR = path.join(UPLOADS_DIR, 'ssl-certificates');
+const DOCUMENTS_DIR = path.join(UPLOADS_DIR, 'documents');
 
 // Ensure directories exist
 async function ensureDirectories() {
@@ -159,6 +161,72 @@ export async function deleteSslCertificateFile(fileName: string): Promise<void> 
     await fsp.unlink(filePath);
   } catch (error) {
     // Ignore if file doesn't exist
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error;
+    }
+  }
+}
+
+/**
+ * Save a general document file (RFP or other documents)
+ */
+export async function saveDocumentFile(
+  deploymentId: string,
+  category: 'rfp' | 'other',
+  file: MultipartFile
+): Promise<{ fileName: string; fileUrl: string; mimeType: string; fileSize: number }> {
+  const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+
+  // Allowed MIME types
+  const allowedMimes = [
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/csv',
+    'text/plain',
+    'application/zip',
+    'application/x-zip-compressed',
+  ];
+
+  if (!allowedMimes.includes(file.mimetype)) {
+    throw new Error(`File type ${file.mimetype} is not allowed`);
+  }
+
+  const uploadDir = path.join(DOCUMENTS_DIR, category, deploymentId);
+  await fsp.mkdir(uploadDir, { recursive: true });
+
+  const ext = path.extname(file.filename) || '';
+  const randomId = crypto.randomBytes(8).toString('hex');
+  const safeName = `${Date.now()}-${randomId}${ext}`;
+  const filePath = path.join(uploadDir, safeName);
+
+  await pipeline(file.file, fs.createWriteStream(filePath));
+
+  const stats = await fsp.stat(filePath);
+
+  if (stats.size > MAX_FILE_SIZE_BYTES) {
+    await fsp.unlink(filePath);
+    throw new Error('File exceeds maximum allowed size of 50 MB');
+  }
+
+  return {
+    fileName: file.filename, // preserve original name
+    fileUrl: filePath,
+    mimeType: file.mimetype,
+    fileSize: stats.size,
+  };
+}
+
+/**
+ * Delete a document file
+ */
+export async function deleteDocumentFile(fileUrl: string): Promise<void> {
+  try {
+    await fsp.unlink(fileUrl);
+  } catch (error) {
+    // ignore missing file
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
       throw error;
     }

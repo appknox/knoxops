@@ -21,6 +21,10 @@ import {
   getCombinedDeploymentHistory,
   getDistinctAppknoxVersions,
   getDistinctCsmUsersHandler,
+  uploadDocuments,
+  listDocuments,
+  removeDocument,
+  downloadAll,
 } from './onprem.controller.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
@@ -932,5 +936,90 @@ export async function onpremRoutes(app: FastifyInstance) {
       },
     },
     deleteDeploymentComment
+  );
+
+  // Document upload route
+  app.post(
+    '/:id/documents',
+    {
+      preHandler: [authenticate, authorize('update', 'OnPrem')],
+      config: { isMultipart: true },
+      schema: {
+        tags: ['On-prem'],
+        summary: 'Upload RFP or other documents',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string', format: 'uuid' } },
+        },
+        querystring: {
+          type: 'object',
+          required: ['category'],
+          properties: { category: { type: 'string', enum: ['rfp', 'other'] } },
+        },
+      },
+    },
+    uploadDocuments
+  );
+
+  // List documents route
+  app.get(
+    '/:id/documents',
+    {
+      preHandler: [authenticate, authorize('read', 'OnPrem')],
+      schema: {
+        tags: ['On-prem'],
+        summary: 'List documents for a deployment',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string', format: 'uuid' } },
+        },
+      },
+    },
+    listDocuments
+  );
+
+  // Delete document route
+  app.delete(
+    '/:id/documents/:docId',
+    {
+      preHandler: [authenticate, authorize('update', 'OnPrem')],
+      schema: {
+        tags: ['On-prem'],
+        summary: 'Delete a document',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id', 'docId'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            docId: { type: 'string', format: 'uuid' },
+          },
+        },
+      },
+    },
+    removeDocument
+  );
+
+  // Download all files as ZIP route
+  app.get(
+    '/:id/download-all',
+    {
+      preHandler: [authenticate, authorize('read', 'OnPrem')],
+      schema: {
+        tags: ['On-prem'],
+        summary: 'Download all files as ZIP',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string', format: 'uuid' } },
+        },
+      },
+    },
+    downloadAll
   );
 }

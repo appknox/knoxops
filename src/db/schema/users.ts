@@ -25,6 +25,7 @@ export const users = pgTable('users', {
   status: userStatusEnum('status').notNull().default('pending'),
   inviteToken: varchar('invite_token', { length: 255 }),
   inviteExpiresAt: timestamp('invite_expires_at'),
+  inviteLastSentAt: timestamp('invite_last_sent_at'),
   invitedBy: uuid('invited_by'),
   lastLoginAt: timestamp('last_login_at'),
   createdAt: timestamp('created_at').notNull().defaultNow(),

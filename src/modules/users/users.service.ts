@@ -1,4 +1,4 @@
-import { eq, and, or, ilike, sql, desc, asc, ne, lt } from 'drizzle-orm';
+import { eq, and, or, ilike, sql, desc, asc, ne, lt, inArray } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { users, User, Role } from '../../db/schema/index.js';
 import { NotFoundError, BadRequestError } from '../../middleware/errorHandler.js';
@@ -38,7 +38,13 @@ export async function listUsers(query: ListUsersQuery): Promise<PaginatedUsers> 
     .where(and(eq(users.status, 'pending'), lt(users.inviteExpiresAt, new Date())));
 
   // Build filter conditions
-  const userConditions = [ne(users.status, 'deleted')];
+  const userConditions = [];
+
+  // Only exclude deleted users if no status filter is specified
+  if (!status || status.length === 0) {
+    userConditions.push(ne(users.status, 'deleted'));
+  }
+
   if (search) {
     userConditions.push(
       or(
@@ -51,8 +57,8 @@ export async function listUsers(query: ListUsersQuery): Promise<PaginatedUsers> 
   if (role) {
     userConditions.push(eq(users.role, role));
   }
-  if (status !== undefined) {
-    userConditions.push(eq(users.status, status));
+  if (status && status.length > 0) {
+    userConditions.push(inArray(users.status, status as any));
   }
 
   const userWhereClause = userConditions.length > 0 ? and(...userConditions) : undefined;
@@ -67,6 +73,7 @@ export async function listUsers(query: ListUsersQuery): Promise<PaginatedUsers> 
       role: users.role,
       status: users.status,
       lastLoginAt: users.lastLoginAt,
+      inviteLastSentAt: users.inviteLastSentAt,
       createdAt: users.createdAt,
       updatedAt: users.updatedAt,
     })

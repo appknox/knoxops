@@ -4,10 +4,13 @@ import {
   onpremDeployments,
   onpremStatusHistory,
   onpremComments,
+  onpremDocuments,
   OnpremDeployment,
   OnpremStatusHistory,
   OnpremComment,
+  OnpremDocument,
   DeploymentStatus,
+  DocumentCategory,
   users,
 } from '../../db/schema/index.js';
 import { NotFoundError, ConflictError, ForbiddenError } from '../../middleware/errorHandler.js';
@@ -21,6 +24,8 @@ import {
   saveSslCertificateFile,
   getSslCertificateFilePath,
   deleteSslCertificateFile,
+  saveDocumentFile,
+  deleteDocumentFile,
 } from '../../services/file.service.js';
 import { parseExcelFile, ParsedExcelData } from '../../services/excel-parser.service.js';
 import fsp from 'fs/promises';
@@ -780,4 +785,93 @@ export async function getDistinctCsmUsers(): Promise<{ id: string; firstName: st
     .orderBy(asc(users.firstName));
 
   return results;
+}
+
+/**
+ * Upload one document file and insert DB record
+ */
+export async function uploadDocument(
+  deploymentId: string,
+  category: DocumentCategory,
+  file: MultipartFile
+): Promise<OnpremDocument> {
+  const { fileName, fileUrl, mimeType, fileSize } = await saveDocumentFile(deploymentId, category, file);
+  const [doc] = await db
+    .insert(onpremDocuments)
+    .values({
+      deploymentId,
+      category,
+      fileName,
+      fileUrl,
+      mimeType,
+      fileSize,
+    })
+    .returning();
+  return doc;
+}
+
+/**
+ * Get all documents for a deployment (optionally filtered by category)
+ */
+export async function getDocuments(
+  deploymentId: string,
+  category?: DocumentCategory
+): Promise<OnpremDocument[]> {
+  const conditions = [eq(onpremDocuments.deploymentId, deploymentId)];
+  if (category) conditions.push(eq(onpremDocuments.category, category));
+  return db.select().from(onpremDocuments).where(and(...conditions));
+}
+
+/**
+ * Delete a single document record and its file
+ */
+export async function deleteDocument(documentId: string): Promise<void> {
+  const docs = await db.select().from(onpremDocuments).where(eq(onpremDocuments.id, documentId));
+  const doc = docs[0];
+  if (!doc) throw new NotFoundError('Document not found');
+  await deleteDocumentFile(doc.fileUrl);
+  await db.delete(onpremDocuments).where(eq(onpremDocuments.id, documentId));
+}
+
+/**
+ * Build a ZIP buffer containing ALL files for a deployment
+ */
+export async function buildDeploymentZip(deploymentId: string): Promise<Buffer> {
+  const deployment = await getOnpremById(deploymentId);
+  if (!deployment) throw new NotFoundError('Deployment not found');
+
+  const docs = await getDocuments(deploymentId);
+
+  const { default: archiver } = await import('archiver');
+  const archive = archiver('zip', { zlib: { level: 6 } });
+
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+
+    archive.on('data', (chunk: Buffer) => chunks.push(chunk));
+    archive.on('end', () => resolve(Buffer.concat(chunks)));
+    archive.on('error', reject);
+
+    // Add prerequisite file
+    if (deployment.prerequisiteFileUrl) {
+      const prerequisitePath = getPrerequisiteFilePath(deployment.prerequisiteFileUrl);
+      archive.file(prerequisitePath, {
+        name: `prerequisite/${deployment.prerequisiteFileName ?? 'prerequisite'}`,
+      });
+    }
+
+    // Add SSL certificate
+    if (deployment.sslCertificateFileUrl) {
+      const sslPath = getSslCertificateFilePath(deployment.sslCertificateFileUrl);
+      const sslName = deployment.sslCertificateFileUrl.split('/').pop() || 'ssl-certificate';
+      archive.file(sslPath, { name: `ssl-certificate/${sslName}` });
+    }
+
+    // Add uploaded documents
+    for (const doc of docs) {
+      archive.file(doc.fileUrl, { name: `documents/${doc.fileName}` });
+    }
+
+    archive.finalize();
+  });
 }

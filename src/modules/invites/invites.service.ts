@@ -4,7 +4,7 @@ import { users, User, Role } from '../../db/schema/index.js';
 import { generateInviteToken } from '../../lib/jwt.js';
 import { hashPassword } from '../../lib/password.js';
 import { sendInviteEmail } from '../../services/email.service.js';
-import { BadRequestError, NotFoundError, ConflictError } from '../../middleware/errorHandler.js';
+import { BadRequestError, NotFoundError, ConflictError, TooManyRequestsError } from '../../middleware/errorHandler.js';
 import { env } from '../../config/env.js';
 
 export interface CreateInviteParams {
@@ -58,6 +58,7 @@ export async function createInvite(params: CreateInviteParams): Promise<InviteRe
   const inviteToken = generateInviteToken();
   const inviteExpiresAt = new Date();
   inviteExpiresAt.setDate(inviteExpiresAt.getDate() + env.INVITE_EXPIRY_DAYS);
+  const now = new Date();
 
   const [newUser] = await db
     .insert(users)
@@ -69,6 +70,7 @@ export async function createInvite(params: CreateInviteParams): Promise<InviteRe
       status: 'pending',
       inviteToken,
       inviteExpiresAt,
+      inviteLastSentAt: now,
       invitedBy: params.invitedBy,
       passwordHash: null,
     })
@@ -164,10 +166,23 @@ export async function resendInvite(userId: string, inviterName: string): Promise
     throw new BadRequestError('User is already active and does not need a new invitation');
   }
 
+  // Rate limit: only one invite email per 24 hours
+  if (user.inviteLastSentAt) {
+    const msSinceLast = Date.now() - user.inviteLastSentAt.getTime();
+    const msIn24h = 24 * 60 * 60 * 1000;
+    if (msSinceLast < msIn24h) {
+      const nextAllowedAt = new Date(user.inviteLastSentAt.getTime() + msIn24h);
+      throw new TooManyRequestsError(
+        `An invite was already sent today. You can resend again after ${nextAllowedAt.toISOString()}.`
+      );
+    }
+  }
+
   // Allow: pending, expired, deleted — all reuse the same row
   const inviteToken = generateInviteToken();
   const inviteExpiresAt = new Date();
   inviteExpiresAt.setDate(inviteExpiresAt.getDate() + env.INVITE_EXPIRY_DAYS);
+  const now = new Date();
 
   await db
     .update(users)
@@ -175,7 +190,8 @@ export async function resendInvite(userId: string, inviterName: string): Promise
       status: 'pending',
       inviteToken,
       inviteExpiresAt,
-      updatedAt: new Date(),
+      inviteLastSentAt: now,
+      updatedAt: now,
     })
     .where(eq(users.id, userId));
 

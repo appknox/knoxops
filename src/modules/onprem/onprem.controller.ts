@@ -35,6 +35,10 @@ import {
   getCombinedHistory,
   getDistinctVersions,
   getDistinctCsmUsers,
+  uploadDocument,
+  getDocuments,
+  deleteDocument,
+  buildDeploymentZip,
 } from './onprem.service.js';
 import { createAuditLog, getAuditLogsByEntity } from '../../services/audit-log.service.js';
 import { User } from '../../db/schema/index.js';
@@ -365,4 +369,57 @@ export async function getDistinctCsmUsersHandler(
 ) {
   const results = await getDistinctCsmUsers();
   return reply.send({ data: results });
+}
+
+// Document upload handlers
+export async function uploadDocuments(
+  request: FastifyRequest<{ Params: { id: string }; Querystring: { category: 'rfp' | 'other' } }>,
+  reply: FastifyReply
+) {
+  const { id } = request.params;
+  const { category } = request.query;
+
+  const parts = request.files();
+  const results = [];
+
+  for await (const file of parts) {
+    const doc = await uploadDocument(id, category, file);
+    results.push(doc);
+  }
+
+  return reply.send(results);
+}
+
+export async function listDocuments(
+  request: FastifyRequest<{ Params: { id: string }; Querystring: { category?: 'rfp' | 'other' } }>,
+  reply: FastifyReply
+) {
+  const { id } = request.params;
+  const { category } = request.query;
+  const docs = await getDocuments(id, category);
+  return reply.send(docs);
+}
+
+export async function removeDocument(
+  request: FastifyRequest<{ Params: { id: string; docId: string } }>,
+  reply: FastifyReply
+) {
+  const { docId } = request.params;
+  await deleteDocument(docId);
+  return reply.send({ message: 'Document deleted' });
+}
+
+export async function downloadAll(
+  request: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply
+) {
+  const { id } = request.params;
+  const zipBuffer = await buildDeploymentZip(id);
+  const deployment = await getOnpremById(id);
+  const zipName = `${deployment?.clientName ?? 'deployment'}-files.zip`;
+
+  return reply
+    .header('Content-Type', 'application/zip')
+    .header('Content-Disposition', `attachment; filename="${zipName}"`)
+    .send(zipBuffer);
 }
