@@ -106,6 +106,7 @@ export const onpremDeployments = pgTable('onprem_deployments', {
   lastUpdatedBy: uuid('last_updated_by').references(() => users.id),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  isDeleted: boolean('is_deleted').default(false),
 });
 
 // On-prem device associations table

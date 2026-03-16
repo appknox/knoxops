@@ -215,3 +215,71 @@ export async function changePassword(
 
   return user;
 }
+
+// OIDC Functions
+
+export function getOidcAuthUrl(): string {
+  const params = new URLSearchParams({
+    client_id: env.OIDC_CLIENT_ID,
+    redirect_uri: env.OIDC_CALLBACK_URL,
+    response_type: 'code',
+    scope: 'openid email profile',
+    access_type: 'online',
+  });
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+}
+
+export async function exchangeOidcCode(code: string): Promise<{ email: string; name: string }> {
+  // POST to https://oauth2.googleapis.com/token
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: env.OIDC_CLIENT_ID,
+      client_secret: env.OIDC_CLIENT_SECRET,
+      redirect_uri: env.OIDC_CALLBACK_URL,
+      grant_type: 'authorization_code',
+    }).toString(),
+  });
+
+  if (!tokenRes.ok) {
+    throw new Error('Failed to exchange OIDC code');
+  }
+
+  const tokenData = await tokenRes.json() as { id_token?: string };
+  const idToken: string = tokenData.id_token ?? '';
+
+  // Decode JWT payload (no signature verification needed — Google's token endpoint is trusted)
+  const payload = JSON.parse(Buffer.from(idToken.split('.')[1], 'base64url').toString()) as {
+    email?: string;
+    email_verified?: boolean;
+    name?: string;
+  };
+
+  if (!payload.email || !payload.email_verified) {
+    throw new Error('OIDC: email not present or not verified');
+  }
+
+  return {
+    email: payload.email,
+    name: payload.name ?? payload.email,
+  };
+}
+
+export async function validateOidcUser(email: string): Promise<User> {
+  const user = await findUserByEmail(email);
+  if (!user) {
+    throw new UnauthorizedError('No account found for this Google email. Contact your administrator.');
+  }
+
+  if (!user.isActive) {
+    throw new UnauthorizedError('Account is deactivated');
+  }
+
+  if (user.inviteStatus !== 'accepted') {
+    throw new UnauthorizedError('Account not activated. Please accept your invitation first.');
+  }
+
+  return user;
+}

@@ -3,6 +3,7 @@ import { db } from '../../db/index.js';
 import { devices, Device, NewDevice, DeviceStatus, DeviceType } from '../../db/schema/index.js';
 import { NotFoundError, ConflictError } from '../../middleware/errorHandler.js';
 import { CreateDeviceInput, UpdateDeviceInput, ListDevicesQuery } from './devices.schema.js';
+import { createAuditLog } from '../../services/audit-log.service.js';
 
 // Optimized list item type (only fields needed for table display)
 export interface DeviceListItem {
@@ -65,6 +66,9 @@ export async function listDevices(query: ListDevicesQuery): Promise<PaginatedDev
     conditions.push(sql`${devices.metadata}->>'platform' = ${platform}`);
   }
 
+  // Filter out soft-deleted records
+  conditions.push(eq(devices.isDeleted, false));
+
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
   const sortColumn = {
@@ -115,7 +119,7 @@ export async function listDevices(query: ListDevicesQuery): Promise<PaginatedDev
 
 export async function getDeviceById(id: string): Promise<Device> {
   const device = await db.query.devices.findFirst({
-    where: eq(devices.id, id),
+    where: and(eq(devices.id, id), eq(devices.isDeleted, false)),
   });
 
   if (!device) {
@@ -129,7 +133,7 @@ export async function createDevice(input: CreateDeviceInput, userId: string): Pr
   // Check for duplicate serial number
   if (input.serialNumber) {
     const existing = await db.query.devices.findFirst({
-      where: eq(devices.serialNumber, input.serialNumber),
+      where: and(eq(devices.serialNumber, input.serialNumber), eq(devices.isDeleted, false)),
     });
 
     if (existing) {
@@ -159,7 +163,7 @@ export async function updateDevice(
   // Check for duplicate serial number
   if (input.serialNumber && input.serialNumber !== before.serialNumber) {
     const existing = await db.query.devices.findFirst({
-      where: and(eq(devices.serialNumber, input.serialNumber), sql`${devices.id} != ${id}`),
+      where: and(eq(devices.serialNumber, input.serialNumber), sql`${devices.id} != ${id}`, eq(devices.isDeleted, false)),
     });
 
     if (existing) {
@@ -180,10 +184,29 @@ export async function updateDevice(
   return { before, after };
 }
 
-export async function deleteDevice(id: string): Promise<Device> {
+export async function deleteDevice(
+  id: string,
+  userId: string
+): Promise<Device> {
   const device = await getDeviceById(id);
 
-  await db.delete(devices).where(eq(devices.id, id));
+  await db
+    .update(devices)
+    .set({ isDeleted: true, updatedAt: new Date() })
+    .where(eq(devices.id, id));
+
+  await createAuditLog({
+    userId,
+    module: 'devices',
+    action: 'device_deleted',
+    entityType: 'device',
+    entityId: id,
+    entityName: device.name,
+    changes: {
+      before: { isDeleted: false },
+      after: { isDeleted: true },
+    },
+  });
 
   return device;
 }
@@ -222,6 +245,7 @@ export async function getDeviceStats(): Promise<DeviceStats> {
       count: sql<number>`count(*)::int`,
     })
     .from(devices)
+    .where(eq(devices.isDeleted, false))
     .groupBy(devices.status);
 
   const stats: DeviceStats = {

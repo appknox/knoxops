@@ -98,22 +98,8 @@ export async function remove(
 ) {
   const { id } = request.params;
   const user = request.user as User;
-  const ipAddress = request.ip;
-  const userAgent = request.headers['user-agent'];
 
-  const device = await deleteDevice(id);
-
-  await createAuditLog({
-    userId: user.id,
-    module: 'devices',
-    action: 'device_deleted',
-    entityType: 'device',
-    entityId: device.id,
-    entityName: device.name,
-    changes: { before: device as unknown as Record<string, unknown> },
-    ipAddress: ipAddress ?? undefined,
-    userAgent: userAgent ?? undefined,
-  });
+  const device = await deleteDevice(id, user.id);
 
   return reply.send({ message: 'Device deleted successfully' });
 }

@@ -33,6 +33,8 @@ import {
   deleteComment,
   getComments,
   getCombinedHistory,
+  getDistinctVersions,
+  getDistinctCsmUsers,
 } from './onprem.service.js';
 import { createAuditLog, getAuditLogsByEntity } from '../../services/audit-log.service.js';
 import { User } from '../../db/schema/index.js';
@@ -148,22 +150,8 @@ export async function remove(
 ) {
   const { id } = request.params;
   const user = request.user as User;
-  const ipAddress = request.ip;
-  const userAgent = request.headers['user-agent'];
 
-  const deployment = await deleteOnprem(id);
-
-  await createAuditLog({
-    userId: user.id,
-    module: 'onprem',
-    action: 'deployment_deleted',
-    entityType: 'onprem_deployment',
-    entityId: deployment.id,
-    entityName: deployment.name,
-    changes: { before: deployment as unknown as Record<string, unknown> },
-    ipAddress: ipAddress ?? undefined,
-    userAgent: userAgent ?? undefined,
-  });
+  const deployment = await deleteOnprem(id, user.id);
 
   return reply.send({ message: 'Deployment deleted successfully' });
 }
@@ -361,4 +349,20 @@ export async function getCombinedDeploymentHistory(
   const history = await getCombinedHistory(id);
 
   return reply.send({ data: history });
+}
+
+export async function getDistinctAppknoxVersions(
+  request: FastifyRequest,
+  reply: FastifyReply
+) {
+  const versions = await getDistinctVersions();
+  return reply.send({ data: versions });
+}
+
+export async function getDistinctCsmUsersHandler(
+  request: FastifyRequest,
+  reply: FastifyReply
+) {
+  const results = await getDistinctCsmUsers();
+  return reply.send({ data: results });
 }

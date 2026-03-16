@@ -19,6 +19,8 @@ import {
   deleteDeploymentComment,
   getDeploymentComments,
   getCombinedDeploymentHistory,
+  getDistinctAppknoxVersions,
+  getDistinctCsmUsersHandler,
 } from './onprem.controller.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
@@ -143,6 +145,19 @@ export async function onpremRoutes(app: FastifyInstance) {
             status: {
               type: 'string',
               enum: ['healthy', 'degraded', 'offline', 'maintenance', 'provisioning', 'decommissioned'],
+            },
+            clientStatus: {
+              type: 'string',
+              enum: ['active', 'inactive'],
+            },
+            environmentType: {
+              type: 'string',
+              enum: ['poc', 'production'],
+            },
+            currentVersion: { type: 'string' },
+            maintenancePlan: {
+              type: 'string',
+              enum: ['quarterly', 'annually'],
             },
             environment: { type: 'string' },
             region: { type: 'string' },
@@ -657,6 +672,64 @@ export async function onpremRoutes(app: FastifyInstance) {
     checkPhone
   );
 
+  // Get distinct Appknox versions
+  app.get(
+    '/distinct-versions',
+    {
+      preHandler: [authenticate, authorize('read', 'OnPrem')],
+      schema: {
+        tags: ['On-prem'],
+        summary: 'Get distinct Appknox versions across all deployments',
+        security: [{ bearerAuth: [] }],
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              data: {
+                type: 'array',
+                items: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+    },
+    getDistinctAppknoxVersions
+  );
+
+  // Get distinct CSM users
+  app.get(
+    '/distinct-csm-users',
+    {
+      preHandler: [authenticate, authorize('read', 'OnPrem')],
+      schema: {
+        tags: ['On-prem'],
+        summary: 'Get distinct CSM users assigned to on-prem deployments',
+        security: [{ bearerAuth: [] }],
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              data: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    firstName: { type: 'string' },
+                    lastName: { type: 'string' },
+                    email: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    getDistinctCsmUsersHandler
+  );
+
   // ============================================
   // COMMENT ROUTES
   // ============================================
@@ -796,7 +869,7 @@ export async function onpremRoutes(app: FastifyInstance) {
   app.put(
     '/:id/comments/:commentId',
     {
-      preHandler: [authenticate, authorize('read', 'OnPrem')],
+      preHandler: [authenticate, authorize('update', 'OnPrem')],
       schema: {
         tags: ['On-prem'],
         summary: 'Update deployment comment (only by creator)',
@@ -835,7 +908,7 @@ export async function onpremRoutes(app: FastifyInstance) {
   app.delete(
     '/:id/comments/:commentId',
     {
-      preHandler: [authenticate, authorize('read', 'OnPrem')],
+      preHandler: [authenticate, authorize('delete', 'OnPrem')],
       schema: {
         tags: ['On-prem'],
         summary: 'Delete deployment comment (only by creator)',

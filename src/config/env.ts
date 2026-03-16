@@ -28,6 +28,12 @@ const envSchema = z.object({
   // App
   APP_URL: z.string().url(),
   FRONTEND_URL: z.string().url(),
+
+  // OIDC (Google SSO)
+  OIDC_CLIENT_ID: z.string().min(1),
+  OIDC_CLIENT_SECRET: z.string().min(1),
+  OIDC_ISSUER: z.string().url().default('https://accounts.google.com'),
+  OIDC_CALLBACK_URL: z.string().url(),
 });
 
 export type Env = z.infer<typeof envSchema>;

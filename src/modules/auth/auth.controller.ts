@@ -22,10 +22,14 @@ import {
   validatePasswordResetToken,
   resetPassword,
   changePassword,
+  getOidcAuthUrl,
+  exchangeOidcCode,
+  validateOidcUser,
 } from './auth.service.js';
 import { createAuditLog } from '../../services/audit-log.service.js';
 import { sendPasswordResetEmail } from '../../services/email.service.js';
 import { User } from '../../db/schema/index.js';
+import { env } from '../../config/env.js';
 
 export async function login(
   request: FastifyRequest<{ Body: LoginInput }>,
@@ -248,4 +252,63 @@ export async function changePasswordHandler(
   return reply.send({
     message: 'Password changed successfully.',
   });
+}
+
+export async function oidcInitiate(_request: FastifyRequest, reply: FastifyReply) {
+  const url = getOidcAuthUrl();
+  return reply.redirect(url);
+}
+
+export async function oidcCallback(request: FastifyRequest, reply: FastifyReply) {
+  const { code, error } = request.query as { code?: string; error?: string };
+  const ipAddress = request.ip;
+  const userAgent = request.headers['user-agent'];
+
+  if (error || !code) {
+    // Google rejected or user cancelled — redirect to login with error flag
+    return reply.redirect(`${env.FRONTEND_URL}/login?error=oidc_failed`);
+  }
+
+  try {
+    const { email } = await exchangeOidcCode(code);
+    const user = await validateOidcUser(email);
+
+    // Generate tokens
+    const accessToken = request.server.jwt.sign({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+    });
+    const refreshToken = await createRefreshToken(user.id);
+
+    // Update last login
+    await updateLastLogin(user.id);
+
+    // Log successful OIDC login
+    await createAuditLog({
+      userId: user.id,
+      module: 'auth',
+      action: 'oidc_login',
+      entityType: 'user',
+      entityId: user.id,
+      entityName: `${user.firstName} ${user.lastName}`,
+      ipAddress: ipAddress ?? undefined,
+      userAgent: userAgent ?? undefined,
+    });
+
+    // Redirect to frontend AuthCallback with tokens in hash (same pattern as existing auth flow)
+    const redirectUrl = `${env.FRONTEND_URL}/auth/callback#accessToken=${accessToken}&refreshToken=${refreshToken}`;
+    return reply.redirect(redirectUrl);
+  } catch (error) {
+    // Log failed OIDC login
+    await createAuditLog({
+      module: 'auth',
+      action: 'oidc_login_failed',
+      metadata: { reason: (error as Error).message },
+      ipAddress: ipAddress ?? undefined,
+      userAgent: userAgent ?? undefined,
+    });
+
+    return reply.redirect(`${env.FRONTEND_URL}/login?error=oidc_unauthorized`);
+  }
 }

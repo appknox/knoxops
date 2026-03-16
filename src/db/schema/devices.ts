@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, timestamp, text, jsonb, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, text, jsonb, pgEnum, boolean } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 
 // Device status enum
@@ -39,6 +39,7 @@ export const devices = pgTable('devices', {
   lastUpdatedBy: uuid('last_updated_by').references(() => users.id),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  isDeleted: boolean('is_deleted').default(false),
 });
 
 // Types
