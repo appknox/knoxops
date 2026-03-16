@@ -24,8 +24,11 @@ import {
   changePassword,
   getOidcAuthUrl,
   exchangeOidcCode,
-  validateOidcUser,
 } from './auth.service.js';
+import {
+  acceptInviteViaSso,
+  getPendingInviteByEmail,
+} from '../invites/invites.service.js';
 import { createAuditLog } from '../../services/audit-log.service.js';
 import { sendPasswordResetEmail } from '../../services/email.service.js';
 import { User } from '../../db/schema/index.js';
@@ -161,7 +164,7 @@ export async function forgotPassword(
   const user = await findUserByEmail(email);
 
   // Only proceed if user exists, is active, and has accepted invite
-  if (user && user.isActive && user.inviteStatus === 'accepted') {
+  if (user && user.status === 'active') {
     const token = await createPasswordResetToken(user.id);
     await sendPasswordResetEmail(email, token, `${user.firstName} ${user.lastName}`);
 
@@ -271,7 +274,22 @@ export async function oidcCallback(request: FastifyRequest, reply: FastifyReply)
 
   try {
     const { email } = await exchangeOidcCode(code);
-    const user = await validateOidcUser(email);
+    let user = await findUserByEmail(email);
+
+    if (!user) {
+      // Check for pending invite — auto-accept on first SSO login
+      const invite = await getPendingInviteByEmail(email);
+      if (invite) {
+        await acceptInviteViaSso(email);
+        user = await findUserByEmail(email); // now exists
+      } else {
+        throw new Error('No account found for this Google email. Contact your administrator.');
+      }
+    }
+
+    if (!user || user.status !== 'active') {
+      throw new Error('Account is not active. Contact your administrator.');
+    }
 
     // Generate tokens
     const accessToken = request.server.jwt.sign({

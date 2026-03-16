@@ -32,12 +32,16 @@ export async function validateCredentials(
     throw new UnauthorizedError('Account not activated. Please check your email for the invite.');
   }
 
-  if (!user.isActive) {
-    throw new UnauthorizedError('Account is deactivated');
+  if (user.status === 'pending') {
+    throw new UnauthorizedError('Please accept your invitation first');
   }
 
-  if (user.inviteStatus !== 'accepted') {
-    throw new UnauthorizedError('Account not activated. Please accept your invitation first.');
+  if (user.status === 'expired') {
+    throw new UnauthorizedError('Your invitation has expired. Contact your administrator.');
+  }
+
+  if (user.status === 'deleted') {
+    throw new UnauthorizedError('Account not found');
   }
 
   const isValid = await verifyPassword(password, user.passwordHash);
@@ -79,7 +83,7 @@ export async function validateRefreshToken(token: string): Promise<User> {
     where: eq(users.id, refreshToken.userId),
   });
 
-  if (!user || !user.isActive) {
+  if (!user || user.status !== 'active') {
     throw new UnauthorizedError('User not found or deactivated');
   }
 
@@ -151,7 +155,7 @@ export async function validatePasswordResetToken(token: string): Promise<User> {
     where: eq(users.id, resetToken.userId),
   });
 
-  if (!user || !user.isActive) {
+  if (!user || user.status !== 'active') {
     throw new BadRequestError('User not found or deactivated');
   }
 
@@ -268,17 +272,17 @@ export async function exchangeOidcCode(code: string): Promise<{ email: string; n
 }
 
 export async function validateOidcUser(email: string): Promise<User> {
-  const user = await findUserByEmail(email);
+  let user = await findUserByEmail(email);
+
   if (!user) {
+    // Check for pending invite — auto-accept on first SSO login
+    // Import needed: acceptInviteViaSso, getPendingInviteByEmail from invites.service
+    // This will be set up properly in the import section below
     throw new UnauthorizedError('No account found for this Google email. Contact your administrator.');
   }
 
-  if (!user.isActive) {
+  if (user.status !== 'active') {
     throw new UnauthorizedError('Account is deactivated');
-  }
-
-  if (user.inviteStatus !== 'accepted') {
-    throw new UnauthorizedError('Account not activated. Please accept your invitation first.');
   }
 
   return user;

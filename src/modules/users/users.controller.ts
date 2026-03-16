@@ -5,7 +5,7 @@ import {
   UpdateUserInput,
   ListUsersQuery,
 } from './users.schema.js';
-import { listUsers, getUserById, updateUser, deactivateUser } from './users.service.js';
+import { listUsers, getUserById, updateUser, deleteUser } from './users.service.js';
 import { createAuditLog } from '../../services/audit-log.service.js';
 import { User } from '../../db/schema/index.js';
 
@@ -69,7 +69,7 @@ export async function remove(
   const ipAddress = request.ip;
   const userAgent = request.headers['user-agent'];
 
-  const user = await deactivateUser(id, currentUser.id);
+  const user = await deleteUser(id, currentUser.id);
 
   await createAuditLog({
     userId: currentUser.id,
@@ -82,5 +82,5 @@ export async function remove(
     userAgent: userAgent ?? undefined,
   });
 
-  return reply.send({ message: 'User deactivated successfully' });
+  return reply.send({ message: 'User deleted successfully' });
 }

@@ -11,8 +11,8 @@ export const roleEnum = pgEnum('role', [
   'full_editor',
 ]);
 
-// Invite status enum
-export const inviteStatusEnum = pgEnum('invite_status', ['pending', 'accepted', 'expired']);
+// User status enum
+export const userStatusEnum = pgEnum('user_status', ['pending', 'active', 'expired', 'deleted']);
 
 // Users table
 export const users = pgTable('users', {
@@ -22,8 +22,7 @@ export const users = pgTable('users', {
   firstName: varchar('first_name', { length: 100 }).notNull(),
   lastName: varchar('last_name', { length: 100 }).notNull(),
   role: roleEnum('role').notNull().default('full_viewer'),
-  isActive: boolean('is_active').notNull().default(true),
-  inviteStatus: inviteStatusEnum('invite_status').notNull().default('pending'),
+  status: userStatusEnum('status').notNull().default('pending'),
   inviteToken: varchar('invite_token', { length: 255 }),
   inviteExpiresAt: timestamp('invite_expires_at'),
   invitedBy: uuid('invited_by'),
@@ -44,36 +43,10 @@ export const refreshTokens = pgTable('refresh_tokens', {
   revokedAt: timestamp('revoked_at'),
 });
 
-// User invites table
-export const userInviteStatusEnum = pgEnum('user_invite_status', [
-  'pending',
-  'accepted',
-  'expired',
-  'revoked',
-]);
-
-export const userInvites = pgTable('user_invites', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  email: varchar('email', { length: 255 }).notNull(),
-  firstName: varchar('first_name', { length: 100 }).notNull(),
-  lastName: varchar('last_name', { length: 100 }).notNull(),
-  role: roleEnum('role').notNull(),
-  inviteToken: varchar('invite_token', { length: 255 }).notNull().unique(),
-  invitedBy: uuid('invited_by')
-    .notNull()
-    .references(() => users.id),
-  status: userInviteStatusEnum('status').notNull().default('pending'),
-  expiresAt: timestamp('expires_at').notNull(),
-  acceptedAt: timestamp('accepted_at'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
-
 // Types
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type RefreshToken = typeof refreshTokens.$inferSelect;
 export type NewRefreshToken = typeof refreshTokens.$inferInsert;
-export type UserInvite = typeof userInvites.$inferSelect;
-export type NewUserInvite = typeof userInvites.$inferInsert;
 export type Role = (typeof roleEnum.enumValues)[number];
+export type UserStatus = (typeof userStatusEnum.enumValues)[number];

@@ -48,7 +48,7 @@ export async function sendInviteEmail(
   inviterName: string,
   role: string
 ): Promise<void> {
-  const inviteUrl = `${env.FRONTEND_URL}/invite/accept?token=${inviteToken}`;
+  const inviteUrl = `${env.FRONTEND_URL}/accept-invite/${inviteToken}`;
 
   const subject = 'You have been invited to KnoxAdmin';
 

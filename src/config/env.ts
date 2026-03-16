@@ -34,6 +34,9 @@ const envSchema = z.object({
   OIDC_CLIENT_SECRET: z.string().min(1),
   OIDC_ISSUER: z.string().url().default('https://accounts.google.com'),
   OIDC_CALLBACK_URL: z.string().url(),
+
+  // Invite expiry
+  INVITE_EXPIRY_DAYS: z.coerce.number().int().positive().default(5),
 });
 
 export type Env = z.infer<typeof envSchema>;

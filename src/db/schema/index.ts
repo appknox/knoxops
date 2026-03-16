@@ -2,12 +2,10 @@
 export {
   users,
   refreshTokens,
-  userInvites,
   roleEnum,
-  inviteStatusEnum,
-  userInviteStatusEnum,
+  userStatusEnum,
 } from './users.js';
-export type { User, NewUser, RefreshToken, NewRefreshToken, UserInvite, NewUserInvite, Role } from './users.js';
+export type { User, NewUser, RefreshToken, NewRefreshToken, Role, UserStatus } from './users.js';
 
 // Password Reset Tokens
 export { passwordResetTokens, passwordResetStatusEnum } from './password-reset-tokens.js';

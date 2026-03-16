@@ -19,12 +19,8 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
       throw new UnauthorizedError('User not found');
     }
 
-    if (!user.isActive) {
-      throw new UnauthorizedError('User account is deactivated');
-    }
-
-    if (user.inviteStatus !== 'accepted') {
-      throw new UnauthorizedError('User account is not activated');
+    if (user.status !== 'active') {
+      throw new UnauthorizedError('User account is not active');
     }
 
     request.user = user as unknown as typeof request.user;
@@ -44,7 +40,7 @@ export async function optionalAuthenticate(request: FastifyRequest, _reply: Fast
       where: eq(users.id, userId),
     });
 
-    if (user && user.isActive && user.inviteStatus === 'accepted') {
+    if (user && user.status === 'active') {
       request.user = user as unknown as typeof request.user;
       request.ability = defineAbilitiesFor(user.role);
     }

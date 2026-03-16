@@ -1,7 +1,8 @@
-import { eq, and, or, ilike, sql, desc, asc } from 'drizzle-orm';
+import { eq, and, or, ilike, sql, desc, asc, ne, lt } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { users, userInvites, User, Role } from '../../db/schema/index.js';
+import { users, User, Role } from '../../db/schema/index.js';
 import { NotFoundError, BadRequestError } from '../../middleware/errorHandler.js';
+import { env } from '../../config/env.js';
 import { UpdateUserInput, ListUsersQuery } from './users.schema.js';
 
 export interface UserListItem {
@@ -10,8 +11,7 @@ export interface UserListItem {
   firstName: string;
   lastName: string;
   role: Role;
-  isActive: boolean;
-  inviteStatus: 'pending' | 'accepted' | 'expired';
+  status: 'pending' | 'active' | 'expired' | 'deleted';
   lastLoginAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -28,11 +28,17 @@ export interface PaginatedUsers {
 }
 
 export async function listUsers(query: ListUsersQuery): Promise<PaginatedUsers> {
-  const { page, limit, search, role, isActive, sortBy, sortOrder } = query;
+  const { page, limit, search, role, status, sortBy, sortOrder } = query;
   const offset = (page - 1) * limit;
 
-  // Get accepted users from users table
-  const userConditions = [];
+  // Auto-expire pending users past their deadline
+  await db
+    .update(users)
+    .set({ status: 'expired', updatedAt: new Date() })
+    .where(and(eq(users.status, 'pending'), lt(users.inviteExpiresAt, new Date())));
+
+  // Build filter conditions
+  const userConditions = [ne(users.status, 'deleted')];
   if (search) {
     userConditions.push(
       or(
@@ -45,78 +51,31 @@ export async function listUsers(query: ListUsersQuery): Promise<PaginatedUsers> 
   if (role) {
     userConditions.push(eq(users.role, role));
   }
-  if (isActive !== undefined) {
-    userConditions.push(eq(users.isActive, isActive));
+  if (status !== undefined) {
+    userConditions.push(eq(users.status, status));
   }
+
   const userWhereClause = userConditions.length > 0 ? and(...userConditions) : undefined;
 
-  // Get pending invites from user_invites table
-  const inviteConditions = [eq(userInvites.status, 'pending')];
-  if (search) {
-    inviteConditions.push(
-      or(
-        ilike(userInvites.email, `%${search}%`),
-        ilike(userInvites.firstName, `%${search}%`),
-        ilike(userInvites.lastName, `%${search}%`)
-      )!
-    );
-  }
-  if (role) {
-    inviteConditions.push(eq(userInvites.role, role));
-  }
-  // If filtering by isActive, don't include pending invites (they're not active yet)
-  const includePendingInvites = isActive === undefined || isActive === true;
+  // Query all users from users table (single query)
+  const usersData = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      role: users.role,
+      status: users.status,
+      lastLoginAt: users.lastLoginAt,
+      createdAt: users.createdAt,
+      updatedAt: users.updatedAt,
+    })
+    .from(users)
+    .where(userWhereClause);
 
-  const [usersData, invitesData] = await Promise.all([
-    db
-      .select({
-        id: users.id,
-        email: users.email,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        role: users.role,
-        isActive: users.isActive,
-        inviteStatus: users.inviteStatus,
-        lastLoginAt: users.lastLoginAt,
-        createdAt: users.createdAt,
-        updatedAt: users.updatedAt,
-      })
-      .from(users)
-      .where(userWhereClause),
-    includePendingInvites
-      ? db
-          .select({
-            id: userInvites.id,
-            email: userInvites.email,
-            firstName: userInvites.firstName,
-            lastName: userInvites.lastName,
-            role: userInvites.role,
-            createdAt: userInvites.createdAt,
-            updatedAt: userInvites.updatedAt,
-          })
-          .from(userInvites)
-          .where(and(...inviteConditions))
-      : Promise.resolve([]),
-  ]);
+  const allData: UserListItem[] = usersData as UserListItem[];
 
-  // Transform invites to match user format
-  const pendingInvites: UserListItem[] = invitesData.map((invite) => ({
-    id: invite.id,
-    email: invite.email,
-    firstName: invite.firstName,
-    lastName: invite.lastName,
-    role: invite.role,
-    isActive: false,
-    inviteStatus: 'pending' as const,
-    lastLoginAt: null,
-    createdAt: invite.createdAt,
-    updatedAt: invite.updatedAt,
-  }));
-
-  // Combine users and pending invites
-  const allData: UserListItem[] = [...(usersData as UserListItem[]), ...pendingInvites];
-
-  // Sort combined data
+  // Sort data
   const sortFn = (a: UserListItem, b: UserListItem) => {
     let aVal: string | Date | null;
     let bVal: string | Date | null;
@@ -191,11 +150,6 @@ export async function updateUser(
 ): Promise<{ before: Omit<User, 'passwordHash'>; after: Omit<User, 'passwordHash'> }> {
   const before = await getUserById(id);
 
-  // Prevent self-deactivation
-  if (id === updatedBy && input.isActive === false) {
-    throw new BadRequestError('You cannot deactivate your own account');
-  }
-
   // Prevent changing own role
   if (id === updatedBy && input.role && input.role !== before.role) {
     throw new BadRequestError('You cannot change your own role');
@@ -214,8 +168,7 @@ export async function updateUser(
       firstName: users.firstName,
       lastName: users.lastName,
       role: users.role,
-      isActive: users.isActive,
-      inviteStatus: users.inviteStatus,
+      status: users.status,
       lastLoginAt: users.lastLoginAt,
       createdAt: users.createdAt,
       updatedAt: users.updatedAt,
@@ -227,25 +180,27 @@ export async function updateUser(
   };
 }
 
-export async function deactivateUser(
+export async function deleteUser(
   id: string,
-  deactivatedBy: string
+  deletedBy: string
 ): Promise<Omit<User, 'passwordHash'>> {
-  // Prevent self-deactivation
-  if (id === deactivatedBy) {
-    throw new BadRequestError('You cannot deactivate your own account');
+  // Prevent self-deletion
+  if (id === deletedBy) {
+    throw new BadRequestError('You cannot delete your own account');
   }
 
   const user = await getUserById(id);
 
-  if (!user.isActive) {
-    throw new BadRequestError('User is already deactivated');
+  if (user.status === 'deleted') {
+    throw new BadRequestError('User is already deleted');
   }
 
   const [updated] = await db
     .update(users)
     .set({
-      isActive: false,
+      status: 'deleted',
+      inviteToken: null,
+      inviteExpiresAt: null,
       updatedAt: new Date(),
     })
     .where(eq(users.id, id))
@@ -255,8 +210,7 @@ export async function deactivateUser(
       firstName: users.firstName,
       lastName: users.lastName,
       role: users.role,
-      isActive: users.isActive,
-      inviteStatus: users.inviteStatus,
+      status: users.status,
       lastLoginAt: users.lastLoginAt,
       createdAt: users.createdAt,
       updatedAt: users.updatedAt,
