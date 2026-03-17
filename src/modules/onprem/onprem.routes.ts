@@ -26,6 +26,7 @@ import {
   removeDocument,
   downloadAll,
   recordPatch,
+  searchClients,
 } from './onprem.controller.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
@@ -194,6 +195,45 @@ export async function onpremRoutes(app: FastifyInstance) {
       },
     },
     list
+  );
+
+  // Search clients (for autosuggest)
+  app.get(
+    '/search',
+    {
+      preHandler: [authenticate, authorize('read', 'OnPrem')],
+      schema: {
+        tags: ['On-prem'],
+        summary: 'Search active clients by name',
+        security: [{ bearerAuth: [] }],
+        querystring: {
+          type: 'object',
+          required: ['q'],
+          properties: {
+            q: { type: 'string', minLength: 1 },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              data: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string', format: 'uuid' },
+                    clientName: { type: 'string' },
+                    contactEmail: { type: 'string', format: 'email' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    searchClients
   );
 
   // Get deployment by ID

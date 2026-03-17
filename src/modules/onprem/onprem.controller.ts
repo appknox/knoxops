@@ -40,6 +40,7 @@ import {
   deleteDocument,
   buildDeploymentZip,
   recordPatchDeployment,
+  searchClients as searchClientsService,
 } from './onprem.service.js';
 import { createAuditLog, getAuditLogsByEntity } from '../../services/audit-log.service.js';
 import { User } from '../../db/schema/index.js';
@@ -441,4 +442,31 @@ export async function recordPatch(
 
   await recordPatchDeployment(id, { patchDate, newVersion, nextScheduledPatchDate });
   return reply.send({ message: 'Patch deployment recorded successfully' });
+}
+
+export async function searchClients(
+  request: FastifyRequest<{
+    Querystring: { q?: string };
+  }>,
+  reply: FastifyReply
+) {
+  const { q } = request.query;
+
+  if (!q || q.trim().length === 0) {
+    return reply.status(400).send({
+      success: false,
+      message: 'Search query required (minimum 1 character)',
+    });
+  }
+
+  try {
+    const results = await searchClientsService(q.trim());
+    reply.send({ data: results });
+  } catch (error) {
+    console.error('Search clients failed:', error);
+    reply.status(500).send({
+      success: false,
+      message: 'Failed to search clients',
+    });
+  }
 }

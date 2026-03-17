@@ -40,6 +40,11 @@ const envSchema = z.object({
 
   // Slack
   SLACK_WEBHOOK_URL: z.string().url().optional(),
+
+  // GitHub (for releases)
+  GITHUB_TOKEN: z.string().min(1).optional(),
+  GITHUB_OWNER: z.string().min(1).optional(),
+  GITHUB_REPO: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -161,3 +161,76 @@ KnoxAdmin Team
 
   await sendEmail({ to: email, subject, text, html });
 }
+
+export async function sendReleaseEmail(options: {
+  toEmail: string;
+  clientName: string;
+  tagName: string;
+  releaseName: string;
+  releaseBody: string;
+  assetName: string;
+  downloadUrl: string;
+}): Promise<void> {
+  const subject = `New Release Available: ${options.tagName}`;
+
+  const releaseNotes = options.releaseBody.split('\n').slice(0, 5).join('\n');
+
+  const text = `
+Hello ${options.clientName},
+
+A new release is available: ${options.releaseName} (${options.tagName})
+
+Release Notes:
+${releaseNotes}
+
+To download ${options.assetName}, please visit:
+${options.downloadUrl}
+
+This download link will expire in 7 days.
+
+Best regards,
+KnoxAdmin Team
+  `.trim();
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="background: #f8f9fa; border-radius: 8px; padding: 30px; margin-bottom: 20px;">
+    <h2 style="margin: 0 0 10px; color: #1a1a1a; font-size: 20px;">📦 New Release Available</h2>
+    <p style="margin: 0 0 5px; font-size: 14px; color: #666;">For ${options.clientName}</p>
+
+    <div style="background: white; border-left: 4px solid #2563eb; padding: 15px; margin: 20px 0; border-radius: 4px;">
+      <p style="margin: 0 0 5px;"><strong style="font-size: 16px;">${options.releaseName}</strong></p>
+      <p style="margin: 0; font-size: 13px; color: #666;">${options.tagName}</p>
+    </div>
+
+    <div style="margin: 20px 0;">
+      <p style="margin: 0 0 10px; font-weight: 500; color: #333;">Release Notes:</p>
+      <pre style="margin: 0; background: #f0f0f0; padding: 10px; border-radius: 4px; font-size: 12px; overflow-x: auto; color: #555;">${options.releaseBody.split('\n').slice(0, 5).join('\n')}</pre>
+    </div>
+
+    <p style="margin: 20px 0 0;">
+      Click the button below to download <strong>${options.assetName}</strong>:
+    </p>
+    <a href="${options.downloadUrl}" style="display: inline-block; background: #2563eb; color: white; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 500; margin: 15px 0;">
+      Download ${options.assetName}
+    </a>
+
+    <p style="margin: 20px 0 0; font-size: 13px; color: #999;">
+      ⏱ This download link will expire in 7 days.
+    </p>
+  </div>
+  <p style="font-size: 11px; color: #999; text-align: center; margin: 20px 0 0;">
+    © KnoxAdmin. All rights reserved.
+  </p>
+</body>
+</html>
+  `.trim();
+
+  await sendEmail({ to: options.toEmail, subject, text, html });
+}

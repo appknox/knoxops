@@ -15,6 +15,7 @@ import { deviceRoutes } from './modules/devices/devices.routes.js';
 import { onpremRoutes } from './modules/onprem/onprem.routes.js';
 import { notificationsRoutes } from './modules/notifications/notifications.routes.js';
 import { auditLogRoutes } from './modules/audit-logs/audit-logs.routes.js';
+import { releasesRoutes } from './modules/releases/releases.routes.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -52,6 +53,7 @@ export async function buildApp() {
   await app.register(onpremRoutes, { prefix: '/api/onprem' });
   await app.register(auditLogRoutes, { prefix: '/api/audit-logs' });
   await app.register(notificationsRoutes, { prefix: '/api' });
+  await app.register(releasesRoutes, { prefix: '/api/releases' });
 
   return app;
 }

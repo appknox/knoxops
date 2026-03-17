@@ -920,3 +920,23 @@ export async function recordPatchDeployment(
     metadata: { version: data.newVersion, nextScheduledPatchDate: data.nextScheduledPatchDate },
   });
 }
+
+export async function searchClients(
+  q: string
+): Promise<{ id: string; clientName: string; contactEmail: string | null }[]> {
+  return db
+    .select({
+      id: onpremDeployments.id,
+      clientName: onpremDeployments.clientName,
+      contactEmail: onpremDeployments.contactEmail,
+    })
+    .from(onpremDeployments)
+    .where(
+      and(
+        eq(onpremDeployments.clientStatus, 'active'),
+        ilike(onpremDeployments.clientName, `%${q}%`)
+      )
+    )
+    .orderBy(asc(onpremDeployments.clientName))
+    .limit(10);
+}
