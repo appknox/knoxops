@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
-import { checkAndNotifyUpcomingPatches, getUpcomingPatches } from '../../services/patch-reminder.service.js';
+import { checkAndNotifyUpcomingPatches, getUpcomingPatches, sendDeploymentPatchReminder } from '../../services/patch-reminder.service.js';
 
 export async function notificationsRoutes(app: FastifyInstance) {
   // Manual trigger for patch reminders (admin only)
@@ -38,6 +38,52 @@ export async function notificationsRoutes(app: FastifyInstance) {
         app.log.error('Error triggering patch reminders:', error);
         return reply.status(500).send({
           message: 'Failed to trigger patch reminders',
+        });
+      }
+    }
+  );
+
+  // Manual trigger for specific deployment patch reminder
+  app.post(
+    '/notifications/patch-reminders/trigger/:id',
+    {
+      preHandler: [authenticate, authorize('manage', 'OnPrem')],
+      schema: {
+        tags: ['Notifications'],
+        summary: 'Trigger patch reminder for specific deployment',
+        description: 'Send Slack notification for a specific deployment patch reminder',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Deployment ID' },
+          },
+          required: ['id'],
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              message: { type: 'string' },
+              deploymentId: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { id } = request.params as { id: string };
+        await sendDeploymentPatchReminder(id);
+
+        return reply.send({
+          message: 'Patch reminder notification sent successfully',
+          deploymentId: id,
+        });
+      } catch (error) {
+        app.log.error(`Error triggering patch reminder for deployment:`, error);
+        return reply.status(500).send({
+          message: 'Failed to trigger patch reminder',
         });
       }
     }

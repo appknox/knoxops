@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
-import { onpremDeployments } from '../db/schema/index.js';
-import { and, isNotNull, gte, lte, sql } from 'drizzle-orm';
+import { onpremDeployments, users } from '../db/schema/index.js';
+import { and, isNotNull, gte, lte, eq } from 'drizzle-orm';
 import { sendPatchReminders } from './slack-notification.service.js';
 
 interface UpcomingPatch {
@@ -10,6 +10,7 @@ interface UpcomingPatch {
   currentVersion: string | null;
   environmentType: string;
   daysUntilPatch: number;
+  csmName: string | null;
 }
 
 /**
@@ -22,6 +23,10 @@ export async function getUpcomingPatches(daysAhead: number = 10): Promise<Upcomi
   const futureDate = new Date(today);
   futureDate.setDate(futureDate.getDate() + daysAhead);
 
+  // Look back 30 days for overdue patches
+  const lookbackDate = new Date(today);
+  lookbackDate.setDate(lookbackDate.getDate() - 30);
+
   try {
     const results = await db
       .select({
@@ -30,13 +35,17 @@ export async function getUpcomingPatches(daysAhead: number = 10): Promise<Upcomi
         nextScheduledPatchDate: onpremDeployments.nextScheduledPatchDate,
         currentVersion: onpremDeployments.currentVersion,
         environmentType: onpremDeployments.environmentType,
+        csmFirstName: users.firstName,
+        csmLastName: users.lastName,
       })
       .from(onpremDeployments)
+      .leftJoin(users, eq(onpremDeployments.associatedCsmId, users.id))
       .where(
         and(
+          eq(onpremDeployments.clientStatus, 'active'),
           isNotNull(onpremDeployments.nextScheduledPatchDate),
-          gte(onpremDeployments.nextScheduledPatchDate, today.toISOString()),
-          lte(onpremDeployments.nextScheduledPatchDate, futureDate.toISOString())
+          gte(onpremDeployments.nextScheduledPatchDate, lookbackDate),
+          lte(onpremDeployments.nextScheduledPatchDate, futureDate)
         )
       )
       .orderBy(onpremDeployments.nextScheduledPatchDate);
@@ -47,13 +56,18 @@ export async function getUpcomingPatches(daysAhead: number = 10): Promise<Upcomi
         (patchDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
       );
 
+      const csmName = result.csmFirstName && result.csmLastName
+        ? `${result.csmFirstName} ${result.csmLastName}`
+        : null;
+
       return {
         id: result.id,
         clientName: result.clientName,
-        nextScheduledPatchDate: result.nextScheduledPatchDate!,
+        nextScheduledPatchDate: result.nextScheduledPatchDate!.toISOString(),
         currentVersion: result.currentVersion,
         environmentType: result.environmentType,
         daysUntilPatch,
+        csmName,
       };
     });
   } catch (error) {
@@ -69,31 +83,119 @@ export async function checkAndNotifyUpcomingPatches(): Promise<void> {
   console.log('Checking for upcoming patch schedules...');
 
   try {
-    const upcomingPatches = await getUpcomingPatches(10);
+    const allPatches = await getUpcomingPatches(10);
 
-    if (upcomingPatches.length === 0) {
+    if (allPatches.length === 0) {
       console.log('No upcoming patches in the next 10 days.');
       return;
     }
 
-    console.log(`Found ${upcomingPatches.length} upcoming patch(es). Sending notifications...`);
+    // Split into overdue and upcoming
+    const overduePatches = allPatches.filter(p => p.daysUntilPatch < 0);
+    const upcomingPatches = allPatches.filter(p => p.daysUntilPatch >= 0);
 
-    // Format for Slack notification
-    const patchNotifications = upcomingPatches.map((patch) => ({
+    console.log(`Found ${allPatches.length} patch(es): ${overduePatches.length} overdue, ${upcomingPatches.length} upcoming. Sending notifications...`);
+
+    // Format overdue patches for Slack notification
+    if (overduePatches.length > 0) {
+      const overdueNotifications = overduePatches.map((patch) => ({
+        clientName: patch.clientName,
+        nextPatchDate: new Date(patch.nextScheduledPatchDate).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+        }),
+        daysUntilPatch: patch.daysUntilPatch,
+        currentVersion: patch.currentVersion,
+        environmentType: patch.environmentType,
+        csmName: patch.csmName,
+      }));
+      await sendPatchReminders(overdueNotifications, 'overdue');
+    }
+
+    // Format upcoming patches for Slack notification
+    if (upcomingPatches.length > 0) {
+      const upcomingNotifications = upcomingPatches.map((patch) => ({
+        clientName: patch.clientName,
+        nextPatchDate: new Date(patch.nextScheduledPatchDate).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+        }),
+        daysUntilPatch: patch.daysUntilPatch,
+        currentVersion: patch.currentVersion,
+        environmentType: patch.environmentType,
+        csmName: patch.csmName,
+      }));
+      await sendPatchReminders(upcomingNotifications, 'upcoming');
+    }
+
+    console.log('Patch reminders sent successfully.');
+  } catch (error) {
+    console.error('Error in patch reminder check:', error);
+  }
+}
+
+/**
+ * Send patch reminder for a specific deployment
+ */
+export async function sendDeploymentPatchReminder(deploymentId: string): Promise<void> {
+  try {
+    const deployment = await db
+      .select({
+        id: onpremDeployments.id,
+        clientName: onpremDeployments.clientName,
+        nextScheduledPatchDate: onpremDeployments.nextScheduledPatchDate,
+        currentVersion: onpremDeployments.currentVersion,
+        environmentType: onpremDeployments.environmentType,
+        clientStatus: onpremDeployments.clientStatus,
+        csmFirstName: users.firstName,
+        csmLastName: users.lastName,
+      })
+      .from(onpremDeployments)
+      .leftJoin(users, eq(onpremDeployments.associatedCsmId, users.id))
+      .where(and(
+        eq(onpremDeployments.id, deploymentId),
+        eq(onpremDeployments.clientStatus, 'active'),
+        isNotNull(onpremDeployments.nextScheduledPatchDate)
+      ))
+      .limit(1);
+
+    if (!deployment || deployment.length === 0) {
+      throw new Error('Deployment not found, not active, or no scheduled patch date');
+    }
+
+    const patch = deployment[0];
+    const patchDate = new Date(patch.nextScheduledPatchDate!);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const daysUntilPatch = Math.ceil(
+      (patchDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    const csmName = patch.csmFirstName && patch.csmLastName
+      ? `${patch.csmFirstName} ${patch.csmLastName}`
+      : null;
+
+    const patchNotification = {
       clientName: patch.clientName,
-      nextPatchDate: new Date(patch.nextScheduledPatchDate).toLocaleDateString('en-US', {
+      nextPatchDate: patchDate.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
       }),
-      daysUntilPatch: patch.daysUntilPatch,
+      daysUntilPatch,
       currentVersion: patch.currentVersion,
       environmentType: patch.environmentType,
-    }));
+      csmName,
+    };
 
-    await sendPatchReminders(patchNotifications);
-    console.log('Patch reminders sent successfully.');
+    // Determine notification type based on days
+    const notificationType = daysUntilPatch < 0 ? 'overdue' : 'upcoming';
+    await sendPatchReminders([patchNotification], notificationType);
+    console.log(`Patch reminder sent for ${patch.clientName}`);
   } catch (error) {
-    console.error('Error in patch reminder check:', error);
+    console.error(`Error sending patch reminder for deployment ${deploymentId}:`, error);
+    throw error;
   }
 }

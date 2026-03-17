@@ -875,3 +875,48 @@ export async function buildDeploymentZip(deploymentId: string): Promise<Buffer> 
     archive.finalize();
   });
 }
+
+/**
+ * Record patch deployment for a client
+ */
+export async function recordPatchDeployment(
+  id: string,
+  data: {
+    patchDate: string;
+    newVersion?: string;
+    nextScheduledPatchDate?: string;
+  }
+): Promise<void> {
+  // Verify deployment exists
+  const deployment = await getOnpremById(id);
+  if (!deployment) {
+    throw new NotFoundError('Deployment not found');
+  }
+
+  const updateFields: Record<string, any> = {
+    lastPatchDate: new Date(data.patchDate),
+    updatedAt: new Date(),
+  };
+
+  if (data.newVersion) {
+    updateFields.currentVersion = data.newVersion;
+  }
+
+  if (data.nextScheduledPatchDate) {
+    updateFields.nextScheduledPatchDate = new Date(data.nextScheduledPatchDate);
+  }
+
+  await db
+    .update(onpremDeployments)
+    .set(updateFields)
+    .where(eq(onpremDeployments.id, id));
+
+  // Create audit log
+  await createAuditLog({
+    module: 'onprem',
+    entityType: 'OnpremDeployment',
+    entityId: id,
+    action: 'record_patch',
+    metadata: { version: data.newVersion, nextScheduledPatchDate: data.nextScheduledPatchDate },
+  });
+}

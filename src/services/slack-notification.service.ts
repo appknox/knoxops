@@ -1,6 +1,7 @@
 import { IncomingWebhook } from '@slack/webhook';
+import { env } from '../config/env.js';
 
-const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL || '';
+export type SlackCategory = 'patch' | 'info' | 'warning' | 'error';
 
 interface PatchNotification {
   clientName: string;
@@ -8,24 +9,53 @@ interface PatchNotification {
   daysUntilPatch: number;
   currentVersion: string | null;
   environmentType: string;
+  csmName?: string | null;
+}
+
+const CATEGORY_HEADER: Record<SlackCategory, string> = {
+  patch: '🔔 Patch Reminder',
+  info: 'ℹ️ Info',
+  warning: '⚠️ Warning',
+  error: '🚨 Error',
+};
+
+function getWebhook(): IncomingWebhook | null {
+  if (!env.SLACK_WEBHOOK_URL) {
+    console.warn('SLACK_WEBHOOK_URL not configured. Skipping Slack notification.');
+    return null;
+  }
+  return new IncomingWebhook(env.SLACK_WEBHOOK_URL);
 }
 
 /**
- * Send notification to Slack channel
+ * Core send function — all notification types funnel through here.
+ * `category` controls the header label; `blocks` controls the body.
  */
-export async function sendSlackNotification(message: string, blocks?: any[]): Promise<void> {
-  if (!SLACK_WEBHOOK_URL) {
-    console.warn('Slack webhook URL not configured. Skipping notification.');
-    return;
-  }
+export async function sendSlackNotification(
+  message: string,
+  blocks?: any[],
+  category: SlackCategory = 'info'
+): Promise<void> {
+  const webhook = getWebhook();
+  if (!webhook) return;
+
+  const headerBlocks = [
+    {
+      type: 'header',
+      text: {
+        type: 'plain_text',
+        text: CATEGORY_HEADER[category],
+        emoji: true,
+      },
+    },
+  ];
 
   try {
-    const webhook = new IncomingWebhook(SLACK_WEBHOOK_URL);
     await webhook.send({
       text: message,
-      blocks: blocks || undefined,
+      blocks: blocks ? [...headerBlocks, ...blocks] : undefined,
     });
-    console.log('Slack notification sent successfully');
+    console.log(`Slack [${category}] notification sent`);
   } catch (error) {
     console.error('Failed to send Slack notification:', error);
     throw error;
@@ -33,59 +63,59 @@ export async function sendSlackNotification(message: string, blocks?: any[]): Pr
 }
 
 /**
- * Send patch reminder notifications
+ * Send a grouped digest for multiple upcoming or overdue patches
  */
-export async function sendPatchReminders(patches: PatchNotification[]): Promise<void> {
+export async function sendPatchReminders(
+  patches: PatchNotification[],
+  type: 'overdue' | 'upcoming' = 'upcoming'
+): Promise<void> {
   if (patches.length === 0) return;
 
-  const blocks = [
-    {
-      type: 'header',
-      text: {
-        type: 'plain_text',
-        text: '🔔 Upcoming Patch Schedule Reminders',
-        emoji: true,
-      },
-    },
+  const isOverdue = type === 'overdue';
+  const headerText = isOverdue
+    ? `*⚠️ ${patches.length} client${patches.length > 1 ? 's' : ''} have OVERDUE patch update${patches.length === 1 ? 's' : ''}:*`
+    : `*${patches.length} client${patches.length > 1 ? 's' : ''} require${patches.length === 1 ? 's' : ''} patch updates in the next 10 days:*`;
+
+  const blocks: any[] = [
     {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*${patches.length} client${patches.length > 1 ? 's' : ''} require${patches.length === 1 ? 's' : ''} patch updates in the next 10 days:*`,
+        text: headerText,
       },
     },
-    {
-      type: 'divider',
-    },
+    { type: 'divider' },
   ];
 
   patches.forEach((patch) => {
-    const urgencyEmoji = patch.daysUntilPatch <= 3 ? '🔴' : patch.daysUntilPatch <= 7 ? '🟡' : '🟢';
+    const urgencyEmoji = isOverdue
+      ? '🔴' // Always red for overdue
+      : patch.daysUntilPatch <= 3
+        ? '🔴'
+        : patch.daysUntilPatch <= 7
+          ? '🟡'
+          : '🟢';
+
+    const fields: any[] = [
+      { type: 'mrkdwn', text: `*Client:*\n${patch.clientName}` },
+      { type: 'mrkdwn', text: `*Environment:*\n${patch.environmentType}` },
+      { type: 'mrkdwn', text: `*Current Version:*\n${patch.currentVersion || 'N/A'}` },
+      {
+        type: 'mrkdwn',
+        text: `*${isOverdue ? 'Overdue Since' : 'Next Patch'}:*\n${urgencyEmoji} ${patch.nextPatchDate} _(${Math.abs(patch.daysUntilPatch)} day${Math.abs(patch.daysUntilPatch) === 1 ? '' : 's'}${isOverdue ? ' ago' : ''})_`,
+      },
+    ];
+
+    // Add CSM if available
+    if (patch.csmName) {
+      fields.push({ type: 'mrkdwn', text: `*CSM:*\n${patch.csmName}` });
+    }
 
     blocks.push({
       type: 'section',
-      fields: [
-        {
-          type: 'mrkdwn',
-          text: `*Client:*\n${patch.clientName}`,
-        },
-        {
-          type: 'mrkdwn',
-          text: `*Environment:*\n${patch.environmentType}`,
-        },
-        {
-          type: 'mrkdwn',
-          text: `*Current Version:*\n${patch.currentVersion || 'N/A'}`,
-        },
-        {
-          type: 'mrkdwn',
-          text: `*Next Patch:*\n${urgencyEmoji} ${patch.nextPatchDate} _(${patch.daysUntilPatch} days)_`,
-        },
-      ],
+      fields,
     });
-    blocks.push({
-      type: 'divider',
-    });
+    blocks.push({ type: 'divider' });
   });
 
   blocks.push({
@@ -93,64 +123,18 @@ export async function sendPatchReminders(patches: PatchNotification[]): Promise<
     elements: [
       {
         type: 'mrkdwn',
-        text: '💡 *Legend:* 🔴 Critical (≤3 days) | 🟡 Soon (4-7 days) | 🟢 Upcoming (8-10 days)',
+        text: isOverdue
+          ? '🚨 *Alert:* These patches are overdue and require immediate attention.'
+          : '💡 *Legend:* 🔴 Critical (≤3 days) | 🟡 Soon (4–7 days) | 🟢 Upcoming (8–10 days)',
       },
     ],
   });
 
   await sendSlackNotification(
-    `${patches.length} client(s) have upcoming patch updates`,
-    blocks
-  );
-}
-
-/**
- * Send individual patch reminder
- */
-export async function sendSinglePatchReminder(patch: PatchNotification): Promise<void> {
-  const urgencyEmoji = patch.daysUntilPatch <= 3 ? '🔴' : patch.daysUntilPatch <= 7 ? '🟡' : '🟢';
-
-  const blocks = [
-    {
-      type: 'header',
-      text: {
-        type: 'plain_text',
-        text: `${urgencyEmoji} Patch Reminder: ${patch.clientName}`,
-        emoji: true,
-      },
-    },
-    {
-      type: 'section',
-      fields: [
-        {
-          type: 'mrkdwn',
-          text: `*Client:*\n${patch.clientName}`,
-        },
-        {
-          type: 'mrkdwn',
-          text: `*Environment:*\n${patch.environmentType}`,
-        },
-        {
-          type: 'mrkdwn',
-          text: `*Current Version:*\n${patch.currentVersion || 'N/A'}`,
-        },
-        {
-          type: 'mrkdwn',
-          text: `*Next Patch Date:*\n${patch.nextPatchDate}`,
-        },
-      ],
-    },
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `⏰ *${patch.daysUntilPatch} days remaining* until the scheduled patch update.`,
-      },
-    },
-  ];
-
-  await sendSlackNotification(
-    `Patch reminder: ${patch.clientName} - ${patch.daysUntilPatch} days remaining`,
-    blocks
+    isOverdue
+      ? `${patches.length} client(s) have overdue patch updates`
+      : `${patches.length} client(s) have upcoming patch updates`,
+    blocks,
+    'patch'
   );
 }

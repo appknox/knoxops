@@ -37,6 +37,9 @@ const envSchema = z.object({
 
   // Invite expiry
   INVITE_EXPIRY_DAYS: z.coerce.number().int().positive().default(5),
+
+  // Slack
+  SLACK_WEBHOOK_URL: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

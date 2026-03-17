@@ -39,6 +39,7 @@ import {
   getDocuments,
   deleteDocument,
   buildDeploymentZip,
+  recordPatchDeployment,
 } from './onprem.service.js';
 import { createAuditLog, getAuditLogsByEntity } from '../../services/audit-log.service.js';
 import { User } from '../../db/schema/index.js';
@@ -422,4 +423,22 @@ export async function downloadAll(
     .header('Content-Type', 'application/zip')
     .header('Content-Disposition', `attachment; filename="${zipName}"`)
     .send(zipBuffer);
+}
+
+export async function recordPatch(
+  request: FastifyRequest<{
+    Params: { id: string };
+    Body: {
+      patchDate: string;
+      newVersion?: string;
+      nextScheduledPatchDate?: string;
+    };
+  }>,
+  reply: FastifyReply
+) {
+  const { id } = request.params;
+  const { patchDate, newVersion, nextScheduledPatchDate } = request.body;
+
+  await recordPatchDeployment(id, { patchDate, newVersion, nextScheduledPatchDate });
+  return reply.send({ message: 'Patch deployment recorded successfully' });
 }

@@ -25,6 +25,7 @@ import {
   listDocuments,
   removeDocument,
   downloadAll,
+  recordPatch,
 } from './onprem.controller.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
@@ -330,6 +331,44 @@ export async function onpremRoutes(app: FastifyInstance) {
       },
     },
     update
+  );
+
+  // Record patch deployment
+  app.patch(
+    '/:id/record-patch',
+    {
+      preHandler: [authenticate, authorize('update', 'OnPrem')],
+      schema: {
+        tags: ['On-prem'],
+        summary: 'Record patch deployment',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+          },
+        },
+        body: {
+          type: 'object',
+          required: ['patchDate'],
+          properties: {
+            patchDate: { type: 'string' },
+            newVersion: { type: 'string', maxLength: 50 },
+            nextScheduledPatchDate: { type: 'string' },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              message: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    recordPatch
   );
 
   // Update deployment status
