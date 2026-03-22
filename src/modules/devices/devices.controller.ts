@@ -108,6 +108,18 @@ export async function update(
     });
   }
 
+  // Log purpose change
+  if (before.purpose !== after.purpose) {
+    await createAuditLog({
+      ...commonArgs,
+      action: 'purpose_changed',
+      changes: {
+        before: { purpose: before.purpose ?? null },
+        after: { purpose: after.purpose ?? null },
+      },
+    });
+  }
+
   return reply.send(after);
 }
 

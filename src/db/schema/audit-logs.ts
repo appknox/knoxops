@@ -49,7 +49,7 @@ export const AuditActions = {
     'user_deleted',
     'role_changed',
   ] as const,
-  devices: ['device_created', 'device_updated', 'device_deleted', 'status_changed', 'assigned_to_changed'] as const,
+  devices: ['device_created', 'device_updated', 'device_deleted', 'status_changed', 'assigned_to_changed', 'purpose_changed'] as const,
   onprem: [
     'deployment_created',
     'deployment_updated',
