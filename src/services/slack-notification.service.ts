@@ -19,12 +19,20 @@ const CATEGORY_HEADER: Record<SlackCategory, string> = {
   error: '🚨 Error',
 };
 
-function getWebhook(): IncomingWebhook | null {
+export function getWebhook(): IncomingWebhook | null {
   if (!env.SLACK_WEBHOOK_URL) {
     console.warn('SLACK_WEBHOOK_URL not configured. Skipping Slack notification.');
     return null;
   }
   return new IncomingWebhook(env.SLACK_WEBHOOK_URL);
+}
+
+export function getDeviceWebhook(): IncomingWebhook | null {
+  if (!env.SLACK_DEVICE_WEBHOOK_URL) {
+    console.warn('SLACK_DEVICE_WEBHOOK_URL not configured. Skipping device Slack notification.');
+    return null;
+  }
+  return new IncomingWebhook(env.SLACK_DEVICE_WEBHOOK_URL);
 }
 
 /**

@@ -12,6 +12,7 @@ import { authRoutes } from './modules/auth/auth.routes.js';
 import { inviteRoutes } from './modules/invites/invites.routes.js';
 import { userRoutes } from './modules/users/users.routes.js';
 import { deviceRoutes } from './modules/devices/devices.routes.js';
+import { usbRoutes } from './modules/devices/usb/usb.routes.js';
 import { onpremRoutes } from './modules/onprem/onprem.routes.js';
 import { notificationsRoutes } from './modules/notifications/notifications.routes.js';
 import { auditLogRoutes } from './modules/audit-logs/audit-logs.routes.js';
@@ -50,6 +51,7 @@ export async function buildApp() {
   await app.register(inviteRoutes, { prefix: '/api/invites' });
   await app.register(userRoutes, { prefix: '/api/users' });
   await app.register(deviceRoutes, { prefix: '/api/devices' });
+  await app.register(usbRoutes, { prefix: '/api/devices/usb' });
   await app.register(onpremRoutes, { prefix: '/api/onprem' });
   await app.register(auditLogRoutes, { prefix: '/api/audit-logs' });
   await app.register(notificationsRoutes, { prefix: '/api' });

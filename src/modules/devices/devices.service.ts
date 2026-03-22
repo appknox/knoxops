@@ -5,6 +5,29 @@ import { NotFoundError, ConflictError } from '../../middleware/errorHandler.js';
 import { CreateDeviceInput, UpdateDeviceInput, ListDevicesQuery } from './devices.schema.js';
 import { createAuditLog } from '../../services/audit-log.service.js';
 
+// Platform prefix mapping for auto-generated device names
+const PLATFORM_PREFIX: Record<string, string> = {
+  android: 'A',
+  ios: 'B',
+  cambrionix: 'C',
+};
+
+// Generate auto-assigned device name based on platform
+async function generateDeviceName(platform: string): Promise<string> {
+  const prefix = PLATFORM_PREFIX[platform.toLowerCase()] ?? 'D';
+  const existing = await db
+    .select({ name: devices.name })
+    .from(devices)
+    .where(and(sql`${devices.name} ~ ${`^${prefix}[0-9]+$`}`, eq(devices.isDeleted, false)));
+
+  const nums = existing
+    .map(r => parseInt(r.name.slice(prefix.length), 10))
+    .filter(n => !isNaN(n));
+
+  const next = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+  return `${prefix}${String(next).padStart(3, '0')}`;
+}
+
 // Optimized list item type (only fields needed for table display)
 export interface DeviceListItem {
   id: string;
@@ -88,6 +111,7 @@ export async function listDevices(query: ListDevicesQuery): Promise<PaginatedDev
         id: devices.id,
         name: devices.name,
         status: devices.status,
+        type: devices.type,
         model: devices.model,
         platform: sql<string | null>`${devices.metadata}->>'platform'`,
         purpose: devices.purpose,
@@ -129,6 +153,30 @@ export async function getDeviceById(id: string): Promise<Device> {
   return device;
 }
 
+export async function checkSerialNumber(
+  serialNumber: string,
+  excludeId?: string
+): Promise<{ exists: boolean; deviceId: string | null; deviceName: string | null }> {
+  const conditions = [
+    eq(devices.serialNumber, serialNumber),
+    eq(devices.isDeleted, false),
+  ];
+  if (excludeId) {
+    conditions.push(sql`${devices.id} != ${excludeId}`);
+  }
+
+  const existing = await db.query.devices.findFirst({
+    where: and(...conditions),
+    columns: { id: true, name: true, model: true },
+  });
+
+  return {
+    exists: !!existing,
+    deviceId: existing?.name ?? null,   // "name" is the device identifier e.g. A001
+    deviceName: existing?.model ?? null,
+  };
+}
+
 export async function createDevice(input: CreateDeviceInput, userId: string): Promise<Device> {
   // Check for duplicate serial number
   if (input.serialNumber) {
@@ -141,10 +189,15 @@ export async function createDevice(input: CreateDeviceInput, userId: string): Pr
     }
   }
 
+  // Auto-generate device name based on platform in metadata
+  const platform = (input.metadata?.platform as string) || '';
+  const generatedName = await generateDeviceName(platform);
+
   const [device] = await db
     .insert(devices)
     .values({
       ...input,
+      name: generatedName, // Override any client-provided name
       registeredBy: userId,
       lastUpdatedBy: userId,
     })

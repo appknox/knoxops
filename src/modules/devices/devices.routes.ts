@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { list, getById, create, update, remove, getAuditLog, stats } from './devices.controller.js';
+import { checkSerialNumber } from './devices.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 
@@ -66,6 +67,42 @@ export async function deviceRoutes(app: FastifyInstance) {
     stats
   );
 
+  // Check serial number
+  app.get(
+    '/check-serial',
+    {
+      preHandler: [authenticate, authorize('read', 'Device')],
+      schema: {
+        tags: ['Devices'],
+        summary: 'Check if a serial number is already registered',
+        security: [{ bearerAuth: [] }],
+        querystring: {
+          type: 'object',
+          required: ['serialNumber'],
+          properties: {
+            serialNumber: { type: 'string' },
+            excludeId: { type: 'string', description: 'Device UUID to exclude (for edit)' },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              exists: { type: 'boolean' },
+              deviceId: { type: 'string', nullable: true },   // e.g. "A001"
+              deviceName: { type: 'string', nullable: true }, // e.g. "Pixel 7a"
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { serialNumber, excludeId } = request.query as { serialNumber: string; excludeId?: string };
+      const result = await checkSerialNumber(serialNumber, excludeId);
+      return reply.send(result);
+    }
+  );
+
   // List devices
   app.get(
     '/',
@@ -83,7 +120,7 @@ export async function deviceRoutes(app: FastifyInstance) {
             search: { type: 'string' },
             type: {
               type: 'string',
-              enum: ['server', 'workstation', 'mobile', 'iot', 'network', 'other'],
+              enum: ['server', 'workstation', 'mobile', 'tablet', 'iot', 'network', 'charging_hub', 'other'],
             },
             status: {
               type: 'string',
@@ -157,13 +194,13 @@ export async function deviceRoutes(app: FastifyInstance) {
         security: [{ bearerAuth: [] }],
         body: {
           type: 'object',
-          required: ['name', 'type'],
+          required: ['type'],
           properties: {
             name: { type: 'string', minLength: 1, maxLength: 255 },
             serialNumber: { type: 'string', maxLength: 100 },
             type: {
               type: 'string',
-              enum: ['server', 'workstation', 'mobile', 'iot', 'network', 'other'],
+              enum: ['server', 'workstation', 'mobile', 'tablet', 'iot', 'network', 'charging_hub', 'other'],
             },
             status: {
               type: 'string',
@@ -210,7 +247,7 @@ export async function deviceRoutes(app: FastifyInstance) {
             serialNumber: { type: 'string', maxLength: 100 },
             type: {
               type: 'string',
-              enum: ['server', 'workstation', 'mobile', 'iot', 'network', 'other'],
+              enum: ['server', 'workstation', 'mobile', 'tablet', 'iot', 'network', 'charging_hub', 'other'],
             },
             status: {
               type: 'string',
@@ -294,8 +331,22 @@ export async function deviceRoutes(app: FastifyInstance) {
                     entityType: { type: 'string', nullable: true },
                     entityId: { type: 'string', nullable: true },
                     entityName: { type: 'string', nullable: true },
-                    changes: { type: 'object', nullable: true },
+                    changes: {
+                      type: 'object',
+                      nullable: true,
+                      additionalProperties: true,
+                    },
                     createdAt: { type: 'string', format: 'date-time' },
+                    user: {
+                      type: 'object',
+                      nullable: true,
+                      properties: {
+                        id: { type: 'string' },
+                        firstName: { type: 'string' },
+                        lastName: { type: 'string' },
+                        email: { type: 'string' },
+                      },
+                    },
                   },
                 },
               },

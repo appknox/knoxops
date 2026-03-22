@@ -14,8 +14,10 @@ export const deviceTypeEnum = pgEnum('device_type', [
   'server',
   'workstation',
   'mobile',
+  'tablet',
   'iot',
   'network',
+  'charging_hub',
   'other',
 ]);
 
@@ -33,7 +35,7 @@ export const devices = pgTable('devices', {
   // Operational fields (direct columns)
   purpose: varchar('purpose', { length: 100 }),
   assignedTo: varchar('assigned_to', { length: 255 }),
-  // Technical specs stored in metadata (includes ipAddress, macAddress, cpuArch, rom, platform, etc.)
+  // Technical specs stored in metadata (includes macAddress, cpuArch, osVersion, platform, imei, imei2, udid, modelNumber, etc.)
   metadata: jsonb('metadata').$type<Record<string, unknown>>(),
   registeredBy: uuid('registered_by').references(() => users.id),
   lastUpdatedBy: uuid('last_updated_by').references(() => users.id),
