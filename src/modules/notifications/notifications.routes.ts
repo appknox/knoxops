@@ -15,6 +15,16 @@ export async function notificationsRoutes(app: FastifyInstance) {
         summary: 'Manually trigger patch reminder notifications',
         description: 'Sends Slack notifications for upcoming patches (admin only, for testing)',
         security: [{ bearerAuth: [] }],
+        body: {
+          type: 'object',
+          properties: {
+            deploymentIds: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Optional list of deployment IDs to notify. If omitted, notifies all upcoming patches.',
+            },
+          },
+        },
         response: {
           200: {
             type: 'object',
@@ -28,12 +38,13 @@ export async function notificationsRoutes(app: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const patches = await getUpcomingPatches(10);
-        await checkAndNotifyUpcomingPatches();
+        const { deploymentIds } = (request.body ?? {}) as { deploymentIds?: string[] };
+        await checkAndNotifyUpcomingPatches(deploymentIds);
+        const count = deploymentIds ? deploymentIds.length : (await getUpcomingPatches(10)).length;
 
         return reply.send({
           message: 'Patch reminder notifications triggered successfully',
-          upcomingPatchesCount: patches.length,
+          upcomingPatchesCount: count,
         });
       } catch (error) {
         app.log.error('Error triggering patch reminders:', error);
@@ -119,6 +130,7 @@ export async function notificationsRoutes(app: FastifyInstance) {
                 items: {
                   type: 'object',
                   properties: {
+                    id: { type: 'string' },
                     clientName: { type: 'string' },
                     nextScheduledPatchDate: { type: 'string' },
                     daysUntilPatch: { type: 'number' },

@@ -384,10 +384,8 @@ export async function suggestDevices(
     .from(devices)
     .where(and(...conditions))
     .orderBy(
-      // Sort by distance from requested OS version (exact match first)
-      osVersion
-        ? sql`ABS((${devices.metadata}->>'osVersion')::float - ${parseFloat(osVersion)})`
-        : sql`0`,
+      // Exact match first, then ascending (13 → 14 → 15)
+      sql`(${devices.metadata}->>'osVersion')::float ASC NULLS LAST`,
       asc(devices.name)
     );
 

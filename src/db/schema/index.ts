@@ -40,7 +40,7 @@ export { deviceRequests, deviceRequestStatusEnum } from './device-requests.js';
 export type { DeviceRequest, NewDeviceRequest, DeviceRequestStatus } from './device-requests.js';
 
 // On-prem
-export { onpremDeployments, onpremStatusHistory, onpremComments, onpremDocuments, deploymentStatusEnum, documentCategoryEnum } from './onprem.js';
+export { onpremDeployments, onpremStatusHistory, onpremComments, onpremDocuments, onpremLicenseRequests, deploymentStatusEnum, documentCategoryEnum, licenseRequestStatusEnum, licenseRequestTypeEnum } from './onprem.js';
 export type {
   OnpremDeployment,
   NewOnpremDeployment,
@@ -50,6 +50,10 @@ export type {
   NewOnpremComment,
   OnpremDocument,
   NewOnpremDocument,
+  OnpremLicenseRequest,
+  NewOnpremLicenseRequest,
   DeploymentStatus,
   DocumentCategory,
+  LicenseRequestStatus,
+  LicenseRequestType,
 } from './onprem.js';

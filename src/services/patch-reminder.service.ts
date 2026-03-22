@@ -79,11 +79,14 @@ export async function getUpcomingPatches(daysAhead: number = 10): Promise<Upcomi
 /**
  * Check for upcoming patches and send notifications
  */
-export async function checkAndNotifyUpcomingPatches(): Promise<void> {
+export async function checkAndNotifyUpcomingPatches(deploymentIds?: string[]): Promise<void> {
   console.log('Checking for upcoming patch schedules...');
 
   try {
-    const allPatches = await getUpcomingPatches(10);
+    let allPatches = await getUpcomingPatches(10);
+    if (deploymentIds && deploymentIds.length > 0) {
+      allPatches = allPatches.filter((p) => deploymentIds.includes(p.id));
+    }
 
     if (allPatches.length === 0) {
       console.log('No upcoming patches in the next 10 days.');

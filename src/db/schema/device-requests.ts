@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp, pgEnum, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, timestamp, pgEnum, index, serial } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 import { devices } from './devices.js';
 
@@ -13,6 +13,7 @@ export const deviceRequests = pgTable(
   'device_requests',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    requestNo: serial('request_no').notNull(),
     requestedBy: uuid('requested_by').notNull().references(() => users.id),
     deviceType: varchar('device_type', { length: 50 }).notNull(),
     platform: varchar('platform', { length: 50 }).notNull(),

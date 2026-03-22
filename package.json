@@ -36,6 +36,7 @@
     "drizzle-orm": "^0.38.3",
     "fastify": "^5.2.0",
     "ios-device-list": "^1.1.37",
+    "jsonwebtoken": "^9.0.3",
     "node-cron": "^4.2.1",
     "nodemailer": "^6.9.16",
     "postgres": "^3.4.5",
@@ -44,6 +45,7 @@
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.10.5",
     "@types/nodemailer": "^6.4.17",
     "@typescript-eslint/eslint-plugin": "^8.19.1",

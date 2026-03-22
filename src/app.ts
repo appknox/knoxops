@@ -15,6 +15,7 @@ import { deviceRoutes } from './modules/devices/devices.routes.js';
 import { usbRoutes } from './modules/devices/usb/usb.routes.js';
 import { deviceRequestRoutes } from './modules/device-requests/device-requests.routes.js';
 import { onpremRoutes } from './modules/onprem/onprem.routes.js';
+import { onpremLicenseRequestsRoutes } from './modules/onprem-license-requests/onprem-license-requests.routes.js';
 import { notificationsRoutes } from './modules/notifications/notifications.routes.js';
 import { auditLogRoutes } from './modules/audit-logs/audit-logs.routes.js';
 import { releasesRoutes } from './modules/releases/releases.routes.js';
@@ -22,6 +23,7 @@ import { releasesRoutes } from './modules/releases/releases.routes.js';
 export async function buildApp() {
   const app = Fastify({
     logger: loggerConfig,
+    bodyLimit: 50 * 1024 * 1024, // 50MB — needed for license file uploads
   });
 
   // Register plugins
@@ -55,6 +57,7 @@ export async function buildApp() {
   await app.register(usbRoutes, { prefix: '/api/devices/usb' });
   await app.register(deviceRequestRoutes, { prefix: '/api/device-requests' });
   await app.register(onpremRoutes, { prefix: '/api/onprem' });
+  await app.register(onpremLicenseRequestsRoutes, { prefix: '/api/onprem' });
   await app.register(auditLogRoutes, { prefix: '/api/audit-logs' });
   await app.register(notificationsRoutes, { prefix: '/api' });
   await app.register(releasesRoutes, { prefix: '/api/releases' });

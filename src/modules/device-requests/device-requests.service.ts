@@ -1,9 +1,14 @@
 import { db } from '../../db/index.js';
-import { deviceRequests, users, devices, DeviceRequest, DeviceRequestStatus } from '../../db/schema/index.js';
+import { deviceRequests, users, devices, entityComments, DeviceRequest, DeviceRequestStatus } from '../../db/schema/index.js';
 import { eq, and, desc, isNull, inArray } from 'drizzle-orm';
 import { sendSlackNotification } from '../../services/slack-notification.service.js';
 import { createAuditLog } from '../../services/audit-log.service.js';
 import { User } from '../../db/schema/users.js';
+import { env } from '../../config/env.js';
+
+const requestUrl = (id: string) =>
+  `${env.FRONTEND_URL}/devices?tab=requests&requestId=${id}`;
+
 
 export interface CreateDeviceRequestInput {
   deviceType: string;
@@ -13,11 +18,18 @@ export interface CreateDeviceRequestInput {
   requestingFor?: string;
 }
 
+export interface LinkedDevice {
+  id: string;
+  name: string;
+  model?: string | null;
+}
+
 export interface DeviceRequestWithUser extends DeviceRequest {
   requestedByUser?: User | null;
   approvedByUser?: User | null;
   rejectedByUser?: User | null;
   completedByUser?: User | null;
+  linkedDevice?: LinkedDevice | null;
 }
 
 export async function createRequest(
@@ -55,7 +67,7 @@ export async function createRequest(
     requestingFor && requestingFor !== userName ? `Requesting for: ${requestingFor}\n` : '';
 
   await sendSlackNotification(
-    `📋 New Device Request — ${date}\n\n*Request ID:* ${request.id}\nRequested by: ${userName} (${userEmail})\n${requestingForLine}Device: ${input.platform} ${input.deviceType}${input.osVersion ? ` · ${input.osVersion}` : ''}\nPurpose: ${input.purpose}`
+    `📋 New Device Request — ${date}\n\n*Request #:* ${request.requestNo}\nRequested by: ${userName} (${userEmail})\n${requestingForLine}Device: ${input.platform} ${input.deviceType}${input.osVersion ? ` · ${input.osVersion}` : ''}\nPurpose: ${input.purpose}\n\n<${requestUrl(request.id)}|View Request →>`
   );
 
   return {
@@ -93,20 +105,23 @@ export async function listRequests(
   let rejectedByMap: Record<string, User | null> = {};
   let approvedByMap: Record<string, User | null> = {};
   let completedByMap: Record<string, User | null> = {};
+  let linkedDeviceMap: Record<string, LinkedDevice | null> = {};
 
-  // Collect unique user IDs to fetch
+  // Collect unique user IDs and device IDs to fetch
   const rejectedByIds = new Set<string>();
   const approvedByIds = new Set<string>();
   const completedByIds = new Set<string>();
+  const linkedDeviceIds = new Set<string>();
 
   results.forEach(({ request }) => {
     if (request.rejectedBy) rejectedByIds.add(request.rejectedBy);
     if (request.approvedBy) approvedByIds.add(request.approvedBy);
     if (request.completedBy) completedByIds.add(request.completedBy);
+    if (request.linkedDeviceId) linkedDeviceIds.add(request.linkedDeviceId);
   });
 
-  // Fetch all additional user info in parallel
-  const [rejectedByUsers, approvedByUsers, completedByUsers] = await Promise.all([
+  // Fetch all additional user info + linked devices in parallel
+  const [rejectedByUsers, approvedByUsers, completedByUsers, linkedDevices] = await Promise.all([
     rejectedByIds.size > 0
       ? db
           .select()
@@ -125,6 +140,12 @@ export async function listRequests(
           .from(users)
           .where(inArray(users.id, Array.from(completedByIds)))
       : Promise.resolve([]),
+    linkedDeviceIds.size > 0
+      ? db
+          .select({ id: devices.id, name: devices.name, model: devices.model })
+          .from(devices)
+          .where(inArray(devices.id, Array.from(linkedDeviceIds)))
+      : Promise.resolve([]),
   ]);
 
   rejectedByUsers.forEach((u) => {
@@ -136,6 +157,9 @@ export async function listRequests(
   completedByUsers.forEach((u) => {
     completedByMap[u.id] = u;
   });
+  linkedDevices.forEach((d) => {
+    linkedDeviceMap[d.id] = { id: d.id, name: d.name, model: d.model };
+  });
 
   const requests = results.map(({ request, requestedByUser }) => ({
     ...request,
@@ -143,6 +167,7 @@ export async function listRequests(
     rejectedByUser: request.rejectedBy ? (rejectedByMap[request.rejectedBy] || null) : null,
     approvedByUser: request.approvedBy ? (approvedByMap[request.approvedBy] || null) : null,
     completedByUser: request.completedBy ? (completedByMap[request.completedBy] || null) : null,
+    linkedDevice: request.linkedDeviceId ? (linkedDeviceMap[request.linkedDeviceId] || null) : null,
   }));
 
   return {
@@ -218,7 +243,7 @@ export async function approveRequest(id: string, approverUserId: string): Promis
   const approverName = approverUser ? `${approverUser.firstName} ${approverUser.lastName}` : 'Unknown User';
 
   await sendSlackNotification(
-    `✅ Device Request Approved — ${date}\n\n*Request ID:* ${updated.id}\nRequested by: ${requesterName} | Approved by: ${approverName}\nDevice: ${updated.platform} ${updated.deviceType}${updated.osVersion ? ` · ${updated.osVersion}` : ''}\nPurpose: ${updated.purpose}`
+    `✅ Device Request Approved — ${date}\n\n*Request #:* ${updated.requestNo}\nRequested by: ${requesterName} | Approved by: ${approverName}\nDevice: ${updated.platform} ${updated.deviceType}${updated.osVersion ? ` · ${updated.osVersion}` : ''}\nPurpose: ${updated.purpose}\n\n<${requestUrl(updated.id)}|View Request →>`
   );
 
   return {
@@ -272,7 +297,7 @@ export async function rejectRequest(
   const rejecterName = rejecterUser ? `${rejecterUser.firstName} ${rejecterUser.lastName}` : 'Unknown User';
 
   await sendSlackNotification(
-    `❌ Device Request Rejected — ${date}\n\n*Request ID:* ${updated.id}\nRequested by: ${requesterName} | Rejected by: ${rejecterName}\nDevice: ${updated.platform} ${updated.deviceType}${updated.osVersion ? ` · ${updated.osVersion}` : ''}\nPurpose: ${updated.purpose}\nReason: ${reason}`
+    `❌ Device Request Rejected — ${date}\n\n*Request #:* ${updated.requestNo}\nRequested by: ${requesterName} | Rejected by: ${rejecterName}\nDevice: ${updated.platform} ${updated.deviceType}${updated.osVersion ? ` · ${updated.osVersion}` : ''}\nPurpose: ${updated.purpose}\nReason: ${reason}\n\n<${requestUrl(updated.id)}|View Request →>`
   );
 
   return {
@@ -358,6 +383,19 @@ export async function completeRequest(
         });
       }
 
+      // 4. Add a comment on the device
+      const commentText = assignedTo
+        ? `Device allocated to ${assignedTo} via request #${request.requestNo} (Purpose: ${request.purpose})`
+        : `Device allocated via request #${request.requestNo} (Purpose: ${request.purpose})`;
+
+      await tx.insert(entityComments).values({
+        entityType: 'device',
+        entityId: linkedDeviceId,
+        text: commentText,
+        createdBy: completerUserId,
+        updatedBy: completerUserId,
+      });
+
       // Get updated device for Slack
       linkedDevice = await tx.query.devices.findFirst({
         where: eq(devices.id, linkedDeviceId),
@@ -385,11 +423,12 @@ export async function completeRequest(
   const deviceInfo = linkedDevice ? `${linkedDevice.name} — ${linkedDevice.model || 'Unknown Model'}` : 'No device allocated';
 
   await sendSlackNotification(
-    `📦 Device Request Completed — ${date}\n\n*Request ID:* ${updated.id}\nRequested by: ${requesterName} | Completed by: ${completerName}\nDevice allocated: ${deviceInfo}\nPurpose: ${request.purpose}`
+    `📦 Device Request Completed — ${date}\n\n*Request #:* ${updated.requestNo}\nRequested by: ${requesterName} | Completed by: ${completerName}\nDevice allocated: ${deviceInfo}\nPurpose: ${request.purpose}\n\n<${requestUrl(updated.id)}|View Request →>`
   );
 
   return {
     ...updated,
     requestedByUser,
+    linkedDevice: linkedDevice ? { id: linkedDevice.id, name: linkedDevice.name, model: linkedDevice.model } : null,
   };
 }

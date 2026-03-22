@@ -58,6 +58,7 @@ export async function deviceRequestRoutes(app: FastifyInstance) {
                   type: 'object',
                   properties: {
                     id: { type: 'string', format: 'uuid' },
+                    requestNo: { type: 'integer' },
                     requestedBy: { type: 'string', format: 'uuid' },
                     requestedByUser: {
                       type: 'object',
