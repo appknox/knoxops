@@ -49,7 +49,7 @@ export async function createRequest(
   const userEmail = requestedByUser?.email || '';
 
   await sendSlackNotification(
-    `📋 New Device Request — ${date}\n\nRequested by: ${userName} (${userEmail})\nDevice type: ${input.deviceType}\nPlatform: ${input.platform}\n${input.osVersion ? `OS version: ${input.osVersion}\n` : ''}Purpose: ${input.purpose}\nStatus: Pending`
+    `📋 New Device Request — ${date}\n\n*Request ID:* ${request.id}\nRequested by: ${userName} (${userEmail})\nDevice type: ${input.deviceType}\nPlatform: ${input.platform}\n${input.osVersion ? `OS version: ${input.osVersion}\n` : ''}Purpose: ${input.purpose}\nStatus: Pending`
   );
 
   return {
@@ -160,7 +160,7 @@ export async function approveRequest(id: string, approverUserId: string): Promis
   const approverName = approverUser ? `${approverUser.firstName} ${approverUser.lastName}` : 'Unknown User';
 
   await sendSlackNotification(
-    `✅ Device Request Approved — ${date}\n\nRequested by: ${requesterName} | Approved by: ${approverName}\nDevice: ${updated.deviceType} ${updated.platform}`
+    `✅ Device Request Approved — ${date}\n\n*Request ID:* ${updated.id}\nRequested by: ${requesterName} | Approved by: ${approverName}\nDevice: ${updated.deviceType} ${updated.platform}`
   );
 
   return {
@@ -214,7 +214,7 @@ export async function rejectRequest(
   const rejecterName = rejecterUser ? `${rejecterUser.firstName} ${rejecterUser.lastName}` : 'Unknown User';
 
   await sendSlackNotification(
-    `❌ Device Request Rejected — ${date}\n\nRequested by: ${requesterName} | Rejected by: ${rejecterName}\nReason: ${reason}`
+    `❌ Device Request Rejected — ${date}\n\n*Request ID:* ${updated.id}\nRequested by: ${requesterName} | Rejected by: ${rejecterName}\nReason: ${reason}`
   );
 
   return {
@@ -274,7 +274,7 @@ export async function completeRequest(
   const deviceInfo = linkedDevice ? `${linkedDevice.name} — ${linkedDevice.model || 'Unknown Model'}` : 'No device allocated';
 
   await sendSlackNotification(
-    `📦 Device Request Completed — ${date}\n\nRequested by: ${requesterName} | Completed by: ${completerName}\nDevice allocated: ${deviceInfo}`
+    `📦 Device Request Completed — ${date}\n\n*Request ID:* ${updated.id}\nRequested by: ${requesterName} | Completed by: ${completerName}\nDevice allocated: ${deviceInfo}`
   );
 
   return {
