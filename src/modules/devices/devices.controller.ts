@@ -74,20 +74,39 @@ export async function update(
 
   const { before, after } = await updateDevice(id, input, user.id);
 
-  await createAuditLog({
+  const commonArgs = {
     userId: user.id,
-    module: 'devices',
-    action: 'device_updated',
+    module: 'devices' as const,
     entityType: 'device',
     entityId: after.id,
     entityName: after.name,
-    changes: {
-      before: before as unknown as Record<string, unknown>,
-      after: after as unknown as Record<string, unknown>,
-    },
     ipAddress: ipAddress ?? undefined,
     userAgent: userAgent ?? undefined,
-  });
+  };
+
+  // Log status change
+  if (before.status !== after.status) {
+    await createAuditLog({
+      ...commonArgs,
+      action: 'status_changed',
+      changes: {
+        before: { status: before.status },
+        after: { status: after.status },
+      },
+    });
+  }
+
+  // Log assignedTo change
+  if (before.assignedTo !== after.assignedTo) {
+    await createAuditLog({
+      ...commonArgs,
+      action: 'assigned_to_changed',
+      changes: {
+        before: { assignedTo: before.assignedTo ?? null },
+        after: { assignedTo: after.assignedTo ?? null },
+      },
+    });
+  }
 
   return reply.send(after);
 }
