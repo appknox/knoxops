@@ -1,6 +1,6 @@
 import { db } from '../../db/index.js';
 import { deviceRequests, users, DeviceRequest, DeviceRequestStatus } from '../../db/schema/index.js';
-import { eq, and, desc, isNull } from 'drizzle-orm';
+import { eq, and, desc, isNull, inArray } from 'drizzle-orm';
 import { sendSlackNotification } from '../../services/slack-notification.service.js';
 import { User } from '../../db/schema/users.js';
 
@@ -64,6 +64,7 @@ export async function listRequests(
 ): Promise<{ requests: DeviceRequestWithUser[]; total: number }> {
   const isAdmin = ['admin', 'devices_admin', 'full_editor'].includes(role);
 
+  // Use subqueries to join users table multiple times for different fields
   const results = await db
     .select({
       request: deviceRequests,
@@ -82,9 +83,60 @@ export async function listRequests(
     .where(isAdmin ? undefined : eq(deviceRequests.requestedBy, userId))
     .orderBy(desc(deviceRequests.createdAt));
 
+  // Now fetch additional user info for rejectedBy, approvedBy, completedBy
+  let rejectedByMap: Record<string, User | null> = {};
+  let approvedByMap: Record<string, User | null> = {};
+  let completedByMap: Record<string, User | null> = {};
+
+  // Collect unique user IDs to fetch
+  const rejectedByIds = new Set<string>();
+  const approvedByIds = new Set<string>();
+  const completedByIds = new Set<string>();
+
+  results.forEach(({ request }) => {
+    if (request.rejectedBy) rejectedByIds.add(request.rejectedBy);
+    if (request.approvedBy) approvedByIds.add(request.approvedBy);
+    if (request.completedBy) completedByIds.add(request.completedBy);
+  });
+
+  // Fetch all additional user info in parallel
+  const [rejectedByUsers, approvedByUsers, completedByUsers] = await Promise.all([
+    rejectedByIds.size > 0
+      ? db
+          .select()
+          .from(users)
+          .where(inArray(users.id, Array.from(rejectedByIds)))
+      : Promise.resolve([]),
+    approvedByIds.size > 0
+      ? db
+          .select()
+          .from(users)
+          .where(inArray(users.id, Array.from(approvedByIds)))
+      : Promise.resolve([]),
+    completedByIds.size > 0
+      ? db
+          .select()
+          .from(users)
+          .where(inArray(users.id, Array.from(completedByIds)))
+      : Promise.resolve([]),
+  ]);
+
+  rejectedByUsers.forEach((u) => {
+    rejectedByMap[u.id] = u;
+  });
+  approvedByUsers.forEach((u) => {
+    approvedByMap[u.id] = u;
+  });
+  completedByUsers.forEach((u) => {
+    completedByMap[u.id] = u;
+  });
+
   const requests = results.map(({ request, requestedByUser }) => ({
     ...request,
     requestedByUser: requestedByUser as User | null,
+    rejectedByUser: request.rejectedBy ? (rejectedByMap[request.rejectedBy] || null) : null,
+    approvedByUser: request.approvedBy ? (approvedByMap[request.approvedBy] || null) : null,
+    completedByUser: request.completedBy ? (completedByMap[request.completedBy] || null) : null,
   }));
 
   return {
