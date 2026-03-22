@@ -158,7 +158,8 @@ export async function stats(
 }
 
 // Comment handlers
-import { createComment, updateComment, deleteComment, getCommentById } from '../../services/entity-comments.service.js';
+import { createComment, updateComment, deleteComment, getCommentById, getComments, countComments } from '../../services/entity-comments.service.js';
+import { getAuditLogsByEntity } from '../../services/audit-log.service.js';
 
 export async function addComment(
   request: FastifyRequest<{ Params: { id: string }; Body: { text: string } }>,
@@ -216,4 +217,79 @@ export async function removeComment(
 
   await deleteComment(commentId);
   return reply.send({ message: 'Comment deleted' });
+}
+
+export async function getHistory(
+  request: FastifyRequest<{ Params: { id: string }; Querystring: { type?: string; page?: string; limit?: string } }>,
+  reply: FastifyReply
+) {
+  const { id } = request.params;
+  const { type = 'all', page = '1', limit = '20' } = request.query;
+
+  // Verify device exists
+  await getDeviceById(id);
+
+  const pageNum = Math.max(1, parseInt(page as string) || 1);
+  const limitNum = Math.min(50, Math.max(1, parseInt(limit as string) || 20));
+  const offset = (pageNum - 1) * limitNum;
+
+  try {
+    let entries: any[] = [];
+    let totalCount = 0;
+
+    if (type === 'comment' || type === 'all') {
+      const comments = await getComments('device', id, limitNum, offset);
+      const commentCount = await countComments('device', id);
+      entries.push(
+        ...comments.map((c) => ({
+          id: c.id,
+          type: 'comment',
+          timestamp: c.createdAt,
+          user: c.createdBy || null,
+          data: {
+            text: c.text,
+          },
+        }))
+      );
+      totalCount += commentCount;
+    }
+
+    if (type === 'activity' || type === 'all') {
+      const activities = await getAuditLogsByEntity('device', id, 1000); // Get all for this fetch
+      const activityCount = activities.length;
+      entries.push(
+        ...activities.map((a) => ({
+          id: a.id,
+          type: 'activity',
+          timestamp: a.createdAt,
+          user: a.user || null,
+          data: {
+            action: a.action,
+            changes: a.changes,
+          },
+        }))
+      );
+      totalCount += activityCount;
+    }
+
+    // Sort by timestamp descending
+    entries.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    // Paginate
+    const paginatedEntries = entries.slice(offset, offset + limitNum);
+    const totalPages = Math.ceil(totalCount / limitNum);
+
+    return reply.send({
+      data: paginatedEntries,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total: totalCount,
+        totalPages,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching device history:', error);
+    return reply.status(500).send({ message: 'Failed to fetch history' });
+  }
 }

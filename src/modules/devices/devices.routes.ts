@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { list, getById, create, update, remove, getAuditLog, stats, addComment, editComment, removeComment } from './devices.controller.js';
+import { list, getById, create, update, remove, getAuditLog, stats, addComment, editComment, removeComment, getHistory } from './devices.controller.js';
 import { checkSerialNumber } from './devices.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
@@ -356,6 +356,77 @@ export async function deviceRoutes(app: FastifyInstance) {
       },
     },
     getAuditLog
+  );
+
+  // Get device history (merged comments + activities)
+  app.get(
+    '/:id/history',
+    {
+      preHandler: [authenticate, authorize('read', 'Device')],
+      schema: {
+        tags: ['Devices'],
+        summary: 'Get device history (comments + activities)',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+          },
+        },
+        querystring: {
+          type: 'object',
+          properties: {
+            type: {
+              type: 'string',
+              enum: ['all', 'comment', 'activity'],
+              default: 'all',
+            },
+            page: { type: 'integer', minimum: 1, default: 1 },
+            limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              data: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    type: { type: 'string', enum: ['comment', 'activity'] },
+                    timestamp: { type: 'string', format: 'date-time' },
+                    user: {
+                      type: 'object',
+                      nullable: true,
+                      properties: {
+                        id: { type: 'string' },
+                        firstName: { type: 'string' },
+                        lastName: { type: 'string' },
+                        email: { type: 'string' },
+                      },
+                    },
+                    data: { type: 'object', additionalProperties: true },
+                  },
+                },
+              },
+              pagination: {
+                type: 'object',
+                properties: {
+                  page: { type: 'integer' },
+                  limit: { type: 'integer' },
+                  total: { type: 'integer' },
+                  totalPages: { type: 'integer' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    getHistory
   );
 
   // Add comment
