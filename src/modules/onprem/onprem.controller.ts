@@ -347,14 +347,26 @@ export async function getDeploymentComments(
 }
 
 export async function getCombinedDeploymentHistory(
-  request: FastifyRequest<{ Params: { id: string } }>,
+  request: FastifyRequest<{ Params: { id: string }; Querystring: { type?: string; page?: string; limit?: string } }>,
   reply: FastifyReply
 ) {
   const { id } = request.params;
+  const { type = 'all', page = '1', limit = '20' } = request.query;
 
-  const history = await getCombinedHistory(id);
+  const pageNum = Math.max(1, parseInt(page) || 1);
+  const limitNum = Math.min(50, Math.max(1, parseInt(limit) || 20));
 
-  return reply.send({ data: history });
+  const result = await getCombinedHistory(id, { type, page: pageNum, limit: limitNum });
+
+  return reply.send({
+    data: result.data,
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      total: result.total,
+      totalPages: result.totalPages,
+    },
+  });
 }
 
 export async function getDistinctAppknoxVersions(

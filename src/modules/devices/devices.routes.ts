@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { list, getById, create, update, remove, getAuditLog, stats, addComment, editComment, removeComment, getHistory } from './devices.controller.js';
+import { list, getById, create, update, remove, getAuditLog, stats, addComment, editComment, removeComment, getHistory, getDistinctOsVersionsHandler } from './devices.controller.js';
 import { checkSerialNumber } from './devices.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
@@ -157,6 +157,41 @@ export async function deviceRoutes(app: FastifyInstance) {
       },
     },
     list
+  );
+
+  // Get distinct OS versions for a platform
+  app.get(
+    '/distinct-os-versions',
+    {
+      preHandler: [authenticate, authorize('read', 'Device')],
+      schema: {
+        tags: ['Devices'],
+        summary: 'Get distinct OS versions for a platform',
+        security: [{ bearerAuth: [] }],
+        querystring: {
+          type: 'object',
+          required: ['platform'],
+          properties: {
+            platform: {
+              type: 'string',
+              enum: ['iOS', 'Android'],
+            },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              versions: {
+                type: 'array',
+                items: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+    },
+    getDistinctOsVersionsHandler
   );
 
   // Get device by ID

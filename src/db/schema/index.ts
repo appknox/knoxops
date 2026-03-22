@@ -35,6 +35,10 @@ export type { EntityComment, NewEntityComment, CommentEntityType } from './entit
 export { devices, deviceStatusEnum, deviceTypeEnum } from './devices.js';
 export type { Device, NewDevice, DeviceStatus, DeviceType } from './devices.js';
 
+// Device Requests
+export { deviceRequests, deviceRequestStatusEnum } from './device-requests.js';
+export type { DeviceRequest, NewDeviceRequest, DeviceRequestStatus } from './device-requests.js';
+
 // On-prem
 export { onpremDeployments, onpremStatusHistory, onpremComments, onpremDocuments, deploymentStatusEnum, documentCategoryEnum } from './onprem.js';
 export type {

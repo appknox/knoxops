@@ -14,8 +14,10 @@ import {
   updateDevice,
   deleteDevice,
   getDeviceStats,
+  getDistinctOsVersions,
 } from './devices.service.js';
 import { createAuditLog, getAuditLogsByEntity } from '../../services/audit-log.service.js';
+import { createComment, updateComment, deleteComment, getCommentById, getComments, countComments } from '../../services/entity-comments.service.js';
 import { User } from '../../db/schema/index.js';
 
 export async function list(
@@ -157,10 +159,6 @@ export async function stats(
   return reply.send(deviceStats);
 }
 
-// Comment handlers
-import { createComment, updateComment, deleteComment, getCommentById, getComments, countComments } from '../../services/entity-comments.service.js';
-import { getAuditLogsByEntity } from '../../services/audit-log.service.js';
-
 export async function addComment(
   request: FastifyRequest<{ Params: { id: string }; Body: { text: string } }>,
   reply: FastifyReply
@@ -238,7 +236,7 @@ export async function getHistory(
     let totalCount = 0;
 
     if (type === 'comment' || type === 'all') {
-      const comments = await getComments('device', id, limitNum, offset);
+      const comments = await getComments('device', id, 10000, 0);
       const commentCount = await countComments('device', id);
       entries.push(
         ...comments.map((c) => ({
@@ -255,7 +253,7 @@ export async function getHistory(
     }
 
     if (type === 'activity' || type === 'all') {
-      const activities = await getAuditLogsByEntity('device', id, 1000); // Get all for this fetch
+      const activities = await getAuditLogsByEntity('device', id, 10000);
       const activityCount = activities.length;
       entries.push(
         ...activities.map((a) => ({
@@ -275,7 +273,7 @@ export async function getHistory(
     // Sort by timestamp descending
     entries.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-    // Paginate
+    // Paginate (offset applied here only, not in service calls)
     const paginatedEntries = entries.slice(offset, offset + limitNum);
     const totalPages = Math.ceil(totalCount / limitNum);
 
@@ -291,5 +289,24 @@ export async function getHistory(
   } catch (error) {
     console.error('Error fetching device history:', error);
     return reply.status(500).send({ message: 'Failed to fetch history' });
+  }
+}
+
+export async function getDistinctOsVersionsHandler(
+  request: FastifyRequest<{ Querystring: { platform: string } }>,
+  reply: FastifyReply
+) {
+  const { platform } = request.query;
+
+  if (platform !== 'iOS' && platform !== 'Android') {
+    return reply.status(400).send({ message: 'Platform must be iOS or Android' });
+  }
+
+  try {
+    const versions = await getDistinctOsVersions(platform);
+    return reply.send({ versions });
+  } catch (error) {
+    console.error('Error fetching OS versions:', error);
+    return reply.status(500).send({ message: 'Failed to fetch OS versions' });
   }
 }

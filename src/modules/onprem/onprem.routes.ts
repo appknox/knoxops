@@ -833,6 +833,14 @@ export async function onpremRoutes(app: FastifyInstance) {
             id: { type: 'string', format: 'uuid' },
           },
         },
+        querystring: {
+          type: 'object',
+          properties: {
+            type: { type: 'string', enum: ['all', 'comments', 'activities'], default: 'all' },
+            page: { type: 'integer', minimum: 1, default: 1 },
+            limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+          },
+        },
         response: {
           200: {
             type: 'object',
@@ -845,16 +853,18 @@ export async function onpremRoutes(app: FastifyInstance) {
                     id: { type: 'string' },
                     type: { type: 'string', enum: ['comment', 'audit', 'status_change'] },
                     timestamp: { type: 'string', format: 'date-time' },
-                    user: {
-                      type: 'object',
-                      nullable: true,
-                      additionalProperties: true
-                    },
-                    data: {
-                      type: 'object',
-                      additionalProperties: true
-                    },
+                    user: { type: 'object', nullable: true, additionalProperties: true },
+                    data: { type: 'object', additionalProperties: true },
                   },
+                },
+              },
+              pagination: {
+                type: 'object',
+                properties: {
+                  page: { type: 'integer' },
+                  limit: { type: 'integer' },
+                  total: { type: 'integer' },
+                  totalPages: { type: 'integer' },
                 },
               },
             },

@@ -698,21 +698,22 @@ export async function getComments(
  */
 export async function getCombinedHistory(
   deploymentId: string,
-  limit: number = 100
-): Promise<CombinedHistoryEntry[]> {
+  options: { type?: string; page?: number; limit?: number } = {}
+): Promise<{ data: CombinedHistoryEntry[]; total: number; totalPages: number }> {
+  const { type = 'all', page = 1, limit = 20 } = options;
+
   // Verify deployment exists
   await getOnpremById(deploymentId);
 
   // Fetch all three types in parallel
   const [comments, auditLogs, statusHistory] = await Promise.all([
-    getComments(deploymentId, limit),
-    getAuditLogsByEntity('onprem_deployment', deploymentId, limit),
-    getOnpremStatusHistory(deploymentId, limit),
+    getComments(deploymentId, 10000),
+    getAuditLogsByEntity('onprem_deployment', deploymentId, 10000),
+    getOnpremStatusHistory(deploymentId, 10000),
   ]);
 
   // Transform and combine
-  const combined: CombinedHistoryEntry[] = [
-    // Comments
+  let combined: CombinedHistoryEntry[] = [
     ...comments.map((c) => ({
       id: c.id,
       type: 'comment' as const,
@@ -725,7 +726,6 @@ export async function getCombinedHistory(
         createdBy: c.createdBy,
       },
     })),
-    // Audit logs with user info
     ...auditLogs.map((a) => ({
       id: a.id,
       type: 'audit' as const,
@@ -738,7 +738,6 @@ export async function getCombinedHistory(
         module: a.module,
       },
     })),
-    // Status changes with user info
     ...statusHistory.map((s) => ({
       id: s.id,
       type: 'status_change' as const,
@@ -752,8 +751,22 @@ export async function getCombinedHistory(
     })),
   ];
 
-  // Sort by timestamp descending (newest first)
-  return combined.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  // Sort by timestamp descending
+  combined.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+  // Apply type filter
+  if (type === 'comments') {
+    combined = combined.filter((e) => e.type === 'comment');
+  } else if (type === 'activities') {
+    combined = combined.filter((e) => e.type !== 'comment');
+  }
+
+  const total = combined.length;
+  const totalPages = Math.ceil(total / limit);
+  const offset = (page - 1) * limit;
+  const data = combined.slice(offset, offset + limit);
+
+  return { data, total, totalPages };
 }
 
 export async function getDistinctVersions(): Promise<string[]> {

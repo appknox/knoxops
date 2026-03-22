@@ -327,3 +327,21 @@ export async function getDeviceStats(): Promise<DeviceStats> {
 
   return stats;
 }
+
+export async function getDistinctOsVersions(platform: 'iOS' | 'Android'): Promise<string[]> {
+  const results = await db
+    .selectDistinct({
+      osVersion: sql<string>`${devices.metadata}->>'osVersion'`,
+    })
+    .from(devices)
+    .where(
+      and(
+        sql`${devices.metadata}->>'platform' = ${platform}`,
+        sql`${devices.metadata}->>'osVersion' IS NOT NULL AND ${devices.metadata}->>'osVersion' != ''`,
+        eq(devices.isDeleted, false)
+      )
+    )
+    .orderBy(desc(sql`${devices.metadata}->>'osVersion'`));
+
+  return results.map((r) => r.osVersion).filter(Boolean);
+}
