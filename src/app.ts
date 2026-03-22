@@ -43,7 +43,7 @@ export async function buildApp() {
   // API info
   app.get('/api', async () => {
     return {
-      name: 'KnoxAdmin API',
+      name: 'KnoxOps API',
       version: '1.0.0',
       docs: `${env.APP_URL}/docs`,
     };

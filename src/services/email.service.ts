@@ -50,12 +50,12 @@ export async function sendInviteEmail(
 ): Promise<void> {
   const inviteUrl = `${env.FRONTEND_URL}/accept-invite/${inviteToken}`;
 
-  const subject = 'You have been invited to KnoxAdmin';
+  const subject = 'You have been invited to KnoxOps';
 
   const text = `
 Hello,
 
-${inviterName} has invited you to join KnoxAdmin as a ${role.replace('_', ' ')}.
+${inviterName} has invited you to join KnoxOps as a ${role.replace('_', ' ')}.
 
 To accept this invitation and set up your account, please visit:
 ${inviteUrl}
@@ -65,7 +65,7 @@ This invitation will expire in 7 days.
 If you did not expect this invitation, you can safely ignore this email.
 
 Best regards,
-KnoxAdmin Team
+KnoxOps Team
   `.trim();
 
   const html = `
@@ -79,7 +79,7 @@ KnoxAdmin Team
   <div style="background: #f8f9fa; border-radius: 8px; padding: 30px; margin-bottom: 20px;">
     <h1 style="margin: 0 0 20px; color: #1a1a1a; font-size: 24px;">You're Invited!</h1>
     <p style="margin: 0 0 15px;">
-      <strong>${inviterName}</strong> has invited you to join <strong>KnoxAdmin</strong> as a <strong>${role.replace('_', ' ')}</strong>.
+      <strong>${inviterName}</strong> has invited you to join <strong>KnoxOps</strong> as a <strong>${role.replace('_', ' ')}</strong>.
     </p>
     <p style="margin: 0 0 25px;">
       Click the button below to accept this invitation and set up your account:
@@ -108,12 +108,12 @@ export async function sendPasswordResetEmail(
 ): Promise<void> {
   const resetUrl = `${env.FRONTEND_URL}/reset-password?token=${resetToken}`;
 
-  const subject = 'Reset your KnoxAdmin password';
+  const subject = 'Reset your KnoxOps password';
 
   const text = `
 Hello ${userName},
 
-We received a request to reset your password for your KnoxAdmin account.
+We received a request to reset your password for your KnoxOps account.
 
 To reset your password, please visit:
 ${resetUrl}
@@ -123,7 +123,7 @@ This link will expire in 1 hour.
 If you did not request a password reset, please ignore this email or contact support if you have concerns.
 
 Best regards,
-KnoxAdmin Team
+KnoxOps Team
   `.trim();
 
   const html = `
@@ -140,7 +140,7 @@ KnoxAdmin Team
       Hello <strong>${userName}</strong>,
     </p>
     <p style="margin: 0 0 15px;">
-      We received a request to reset your password for your KnoxAdmin account.
+      We received a request to reset your password for your KnoxOps account.
     </p>
     <p style="margin: 0 0 25px;">
       Click the button below to reset your password:
@@ -189,7 +189,7 @@ ${options.downloadUrl}
 This download link will expire in 7 days.
 
 Best regards,
-KnoxAdmin Team
+KnoxOps Team
   `.trim();
 
   const html = `
@@ -226,7 +226,7 @@ KnoxAdmin Team
     </p>
   </div>
   <p style="font-size: 11px; color: #999; text-align: center; margin: 20px 0 0;">
-    © KnoxAdmin. All rights reserved.
+    © KnoxOps. All rights reserved.
   </p>
 </body>
 </html>
