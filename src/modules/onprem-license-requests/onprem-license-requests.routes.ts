@@ -33,10 +33,10 @@ export async function onpremLicenseRequestsRoutes(app: FastifyInstance) {
         },
         body: {
           type: 'object',
-          required: ['requestType', 'licenseStartDate', 'licenseEndDate', 'numberOfProjects', 'fingerprint'],
+          required: ['requestType', 'licenseStartDate', 'licenseEndDate', 'numberOfProjects', 'fingerprint', 'targetVersion'],
           properties: {
             requestType: { type: 'string', enum: ['license_renewal', 'patch_update'] },
-            targetVersion: { type: 'string', maxLength: 50, nullable: true },
+            targetVersion: { type: 'string', maxLength: 50 },
             licenseStartDate: { type: 'string', format: 'date-time' },
             licenseEndDate: { type: 'string', format: 'date-time' },
             numberOfProjects: { type: 'integer', minimum: 1 },
@@ -61,7 +61,7 @@ export async function onpremLicenseRequestsRoutes(app: FastifyInstance) {
       Params: { deploymentId: string };
       Body: {
         requestType: 'license_renewal' | 'patch_update';
-        targetVersion?: string;
+        targetVersion: string;
         licenseStartDate: string;
         licenseEndDate: string;
         numberOfProjects: number;
