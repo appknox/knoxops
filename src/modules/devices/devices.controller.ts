@@ -15,6 +15,7 @@ import {
   deleteDevice,
   getDeviceStats,
   getDistinctOsVersions,
+  suggestDevices,
 } from './devices.service.js';
 import { createAuditLog, getAuditLogsByEntity } from '../../services/audit-log.service.js';
 import { createComment, updateComment, deleteComment, getCommentById, getComments, countComments } from '../../services/entity-comments.service.js';
@@ -308,5 +309,25 @@ export async function getDistinctOsVersionsHandler(
   } catch (error) {
     console.error('Error fetching OS versions:', error);
     return reply.status(500).send({ message: 'Failed to fetch OS versions' });
+  }
+}
+
+export async function suggestDevicesHandler(
+  request: FastifyRequest<{ Querystring: { platform: string; osVersion?: string; limit?: string } }>,
+  reply: FastifyReply
+) {
+  const { platform, osVersion, limit } = request.query;
+
+  if (!platform) {
+    return reply.status(400).send({ message: 'Platform is required' });
+  }
+
+  try {
+    const devices = await suggestDevices(platform, osVersion);
+    const limitNum = limit ? Math.min(parseInt(limit), 100) : 50;
+    return reply.send({ data: devices.slice(0, limitNum) });
+  } catch (error) {
+    console.error('Error suggesting devices:', error);
+    return reply.status(500).send({ message: 'Failed to fetch device suggestions' });
   }
 }

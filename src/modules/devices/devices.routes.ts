@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { list, getById, create, update, remove, getAuditLog, stats, addComment, editComment, removeComment, getHistory, getDistinctOsVersionsHandler } from './devices.controller.js';
+import { list, getById, create, update, remove, getAuditLog, stats, addComment, editComment, removeComment, getHistory, getDistinctOsVersionsHandler, suggestDevicesHandler } from './devices.controller.js';
 import { checkSerialNumber } from './devices.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
@@ -192,6 +192,50 @@ export async function deviceRoutes(app: FastifyInstance) {
       },
     },
     getDistinctOsVersionsHandler
+  );
+
+  // Suggest devices for request completion
+  app.get(
+    '/suggest',
+    {
+      preHandler: [authenticate, authorize('read', 'Device')],
+      schema: {
+        tags: ['Devices'],
+        summary: 'Suggest devices based on platform and OS version',
+        security: [{ bearerAuth: [] }],
+        querystring: {
+          type: 'object',
+          required: ['platform'],
+          properties: {
+            platform: { type: 'string' },
+            osVersion: { type: 'string' },
+            limit: { type: 'string', default: '50' },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              data: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string', format: 'uuid' },
+                    name: { type: 'string' },
+                    model: { type: 'string', nullable: true },
+                    platform: { type: 'string', nullable: true },
+                    osVersion: { type: 'string', nullable: true },
+                    status: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    suggestDevicesHandler
   );
 
   // Get device by ID

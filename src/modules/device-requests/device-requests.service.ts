@@ -1,7 +1,8 @@
 import { db } from '../../db/index.js';
-import { deviceRequests, users, DeviceRequest, DeviceRequestStatus } from '../../db/schema/index.js';
+import { deviceRequests, users, devices, DeviceRequest, DeviceRequestStatus } from '../../db/schema/index.js';
 import { eq, and, desc, isNull, inArray } from 'drizzle-orm';
 import { sendSlackNotification } from '../../services/slack-notification.service.js';
+import { createAuditLog } from '../../services/audit-log.service.js';
 import { User } from '../../db/schema/users.js';
 
 export interface CreateDeviceRequestInput {
@@ -9,6 +10,7 @@ export interface CreateDeviceRequestInput {
   platform: string;
   osVersion?: string;
   purpose: string;
+  requestingFor?: string;
 }
 
 export interface DeviceRequestWithUser extends DeviceRequest {
@@ -30,6 +32,7 @@ export async function createRequest(
       platform: input.platform.trim(),
       osVersion: input.osVersion?.trim() || null,
       purpose: input.purpose.trim(),
+      requestingFor: input.requestingFor?.trim() || null,
       status: 'pending',
     })
     .returning();
@@ -47,9 +50,12 @@ export async function createRequest(
   });
   const userName = requestedByUser ? `${requestedByUser.firstName} ${requestedByUser.lastName}` : 'Unknown User';
   const userEmail = requestedByUser?.email || '';
+  const requestingFor = input.requestingFor?.trim();
+  const requestingForLine =
+    requestingFor && requestingFor !== userName ? `Requesting for: ${requestingFor}\n` : '';
 
   await sendSlackNotification(
-    `📋 New Device Request — ${date}\n\n*Request ID:* ${request.id}\nRequested by: ${userName} (${userEmail})\nDevice type: ${input.deviceType}\nPlatform: ${input.platform}\n${input.osVersion ? `OS version: ${input.osVersion}\n` : ''}Purpose: ${input.purpose}\nStatus: Pending`
+    `📋 New Device Request — ${date}\n\n*Request ID:* ${request.id}\nRequested by: ${userName} (${userEmail})\n${requestingForLine}Device: ${input.platform} ${input.deviceType}${input.osVersion ? ` · ${input.osVersion}` : ''}\nPurpose: ${input.purpose}`
   );
 
   return {
@@ -212,7 +218,7 @@ export async function approveRequest(id: string, approverUserId: string): Promis
   const approverName = approverUser ? `${approverUser.firstName} ${approverUser.lastName}` : 'Unknown User';
 
   await sendSlackNotification(
-    `✅ Device Request Approved — ${date}\n\n*Request ID:* ${updated.id}\nRequested by: ${requesterName} | Approved by: ${approverName}\nDevice: ${updated.deviceType} ${updated.platform}`
+    `✅ Device Request Approved — ${date}\n\n*Request ID:* ${updated.id}\nRequested by: ${requesterName} | Approved by: ${approverName}\nDevice: ${updated.platform} ${updated.deviceType}${updated.osVersion ? ` · ${updated.osVersion}` : ''}\nPurpose: ${updated.purpose}`
   );
 
   return {
@@ -266,7 +272,7 @@ export async function rejectRequest(
   const rejecterName = rejecterUser ? `${rejecterUser.firstName} ${rejecterUser.lastName}` : 'Unknown User';
 
   await sendSlackNotification(
-    `❌ Device Request Rejected — ${date}\n\n*Request ID:* ${updated.id}\nRequested by: ${requesterName} | Rejected by: ${rejecterName}\nReason: ${reason}`
+    `❌ Device Request Rejected — ${date}\n\n*Request ID:* ${updated.id}\nRequested by: ${requesterName} | Rejected by: ${rejecterName}\nDevice: ${updated.platform} ${updated.deviceType}${updated.osVersion ? ` · ${updated.osVersion}` : ''}\nPurpose: ${updated.purpose}\nReason: ${reason}`
   );
 
   return {
@@ -289,31 +295,84 @@ export async function completeRequest(
     throw new Error(`Cannot complete request with status ${request.status}`);
   }
 
-  const [updated] = await db
-    .update(deviceRequests)
-    .set({
-      status: 'completed',
-      linkedDeviceId: linkedDeviceId || null,
-      completedBy: completerUserId,
-      completedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(deviceRequests.id, id))
-    .returning();
+  let updated: DeviceRequest;
+  let linkedDevice: any = null;
 
-  // Fetch user info and device info for Slack
-  const [requestedByUser, completerUser, linkedDevice] = await Promise.all([
+  // Use transaction for atomicity
+  await db.transaction(async (tx) => {
+    // 1. Update the request
+    const [updatedRequest] = await tx
+      .update(deviceRequests)
+      .set({
+        status: 'completed',
+        linkedDeviceId: linkedDeviceId || null,
+        completedBy: completerUserId,
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(deviceRequests.id, id))
+      .returning();
+
+    updated = updatedRequest;
+
+    // 2. If a device was linked, update its status + purpose + assignedTo
+    if (linkedDeviceId) {
+      // Get requester name for assignedTo
+      const requester = await tx.query.users.findFirst({
+        where: eq(users.id, request.requestedBy),
+      });
+
+      const assignedTo = request.requestingFor
+        || (requester ? `${requester.firstName} ${requester.lastName}` : undefined);
+
+      // Get current device to log changes
+      const currentDevice = await tx.query.devices.findFirst({
+        where: eq(devices.id, linkedDeviceId),
+      });
+
+      // Update device
+      await tx
+        .update(devices)
+        .set({
+          status: 'inactive',
+          purpose: request.purpose,
+          ...(assignedTo && { assignedTo }),
+          lastUpdatedBy: completerUserId,
+          updatedAt: new Date(),
+        })
+        .where(eq(devices.id, linkedDeviceId));
+
+      // 3. Log device audit entry
+      if (currentDevice) {
+        await createAuditLog({
+          userId: completerUserId,
+          module: 'devices',
+          action: 'device_allocated_from_request',
+          entityType: 'device',
+          entityId: linkedDeviceId,
+          entityName: currentDevice.name,
+          changes: {
+            before: { status: 'active', assignedTo: currentDevice.assignedTo || null },
+            after: { status: 'inactive', assignedTo, purpose: request.purpose },
+          },
+        });
+      }
+
+      // Get updated device for Slack
+      linkedDevice = await tx.query.devices.findFirst({
+        where: eq(devices.id, linkedDeviceId),
+      });
+    }
+  });
+
+  // Fetch user info for Slack (outside transaction)
+  const [requestedByUser, completerUser] = await Promise.all([
     db.query.users.findFirst({
       where: eq(users.id, updated.requestedBy),
     }),
     db.query.users.findFirst({
       where: eq(users.id, completerUserId),
     }),
-    linkedDeviceId
-      ? db.query.devices.findFirst({
-          where: eq(db.schema.devices.id, linkedDeviceId),
-        })
-      : Promise.resolve(null),
   ]);
 
   const date = new Date().toLocaleDateString('en-US', {
@@ -326,7 +385,7 @@ export async function completeRequest(
   const deviceInfo = linkedDevice ? `${linkedDevice.name} — ${linkedDevice.model || 'Unknown Model'}` : 'No device allocated';
 
   await sendSlackNotification(
-    `📦 Device Request Completed — ${date}\n\n*Request ID:* ${updated.id}\nRequested by: ${requesterName} | Completed by: ${completerName}\nDevice allocated: ${deviceInfo}`
+    `📦 Device Request Completed — ${date}\n\n*Request ID:* ${updated.id}\nRequested by: ${requesterName} | Completed by: ${completerName}\nDevice allocated: ${deviceInfo}\nPurpose: ${request.purpose}`
   );
 
   return {

@@ -18,6 +18,7 @@ export const deviceRequests = pgTable(
     platform: varchar('platform', { length: 50 }).notNull(),
     osVersion: varchar('os_version', { length: 50 }),
     purpose: text('purpose').notNull(),
+    requestingFor: varchar('requesting_for', { length: 255 }),
     status: deviceRequestStatusEnum('status').notNull().default('pending'),
     rejectionReason: text('rejection_reason'),
     linkedDeviceId: uuid('linked_device_id').references(() => devices.id),

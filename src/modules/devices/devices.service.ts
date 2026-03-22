@@ -345,3 +345,51 @@ export async function getDistinctOsVersions(platform: 'iOS' | 'Android'): Promis
 
   return results.map((r) => r.osVersion).filter(Boolean);
 }
+
+export interface SuggestedDevice {
+  id: string;
+  name: string;
+  model: string | null;
+  platform: string | null;
+  osVersion: string | null;
+  status: string;
+}
+
+export async function suggestDevices(
+  platform: string,
+  osVersion?: string
+): Promise<SuggestedDevice[]> {
+  const conditions = [
+    eq(devices.status, 'active'),
+    eq(devices.isDeleted, false),
+    sql`${devices.metadata}->>'platform' = ${platform}`,
+  ];
+
+  // Add OS version compatibility filter if provided
+  if (osVersion) {
+    conditions.push(
+      sql`(${devices.metadata}->>'osVersion')::float >= ${parseFloat(osVersion)}`
+    );
+  }
+
+  const rows = await db
+    .select({
+      id: devices.id,
+      name: devices.name,
+      model: devices.model,
+      platform: sql<string | null>`${devices.metadata}->>'platform'`,
+      osVersion: sql<string | null>`${devices.metadata}->>'osVersion'`,
+      status: devices.status,
+    })
+    .from(devices)
+    .where(and(...conditions))
+    .orderBy(
+      // Sort by distance from requested OS version (exact match first)
+      osVersion
+        ? sql`ABS((${devices.metadata}->>'osVersion')::float - ${parseFloat(osVersion)})`
+        : sql`0`,
+      asc(devices.name)
+    );
+
+  return rows;
+}
