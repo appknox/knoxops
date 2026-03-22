@@ -27,6 +27,10 @@ export type {
   OnpremAction,
 } from './audit-logs.js';
 
+// Entity Comments
+export { entityComments, commentEntityTypeEnum } from './entity-comments.js';
+export type { EntityComment, NewEntityComment, CommentEntityType } from './entity-comments.js';
+
 // Devices
 export { devices, deviceStatusEnum, deviceTypeEnum } from './devices.js';
 export type { Device, NewDevice, DeviceStatus, DeviceType } from './devices.js';

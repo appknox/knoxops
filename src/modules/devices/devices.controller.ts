@@ -156,3 +156,64 @@ export async function stats(
   const deviceStats = await getDeviceStats();
   return reply.send(deviceStats);
 }
+
+// Comment handlers
+import { createComment, updateComment, deleteComment, getCommentById } from '../../services/entity-comments.service.js';
+
+export async function addComment(
+  request: FastifyRequest<{ Params: { id: string }; Body: { text: string } }>,
+  reply: FastifyReply
+) {
+  const { id } = request.params;
+  const { text } = request.body;
+  const user = request.user as User;
+
+  // Verify device exists
+  await getDeviceById(id);
+
+  const comment = await createComment('device', id, text, user.id);
+  return reply.status(201).send(comment);
+}
+
+export async function editComment(
+  request: FastifyRequest<{ Params: { id: string; commentId: string }; Body: { text: string } }>,
+  reply: FastifyReply
+) {
+  const { commentId } = request.params;
+  const { text } = request.body;
+  const user = request.user as User;
+
+  const comment = await getCommentById(commentId);
+  if (!comment) {
+    return reply.status(404).send({ message: 'Comment not found' });
+  }
+
+  // Only comment author can edit
+  if (comment.createdBy?.id !== user.id) {
+    return reply.status(403).send({ message: 'Only comment author can edit' });
+  }
+
+  const updated = await updateComment(commentId, text, user.id);
+  return reply.send(updated);
+}
+
+export async function removeComment(
+  request: FastifyRequest<{ Params: { id: string; commentId: string } }>,
+  reply: FastifyReply
+) {
+  const { commentId } = request.params;
+  const user = request.user as User;
+
+  const comment = await getCommentById(commentId);
+  if (!comment) {
+    return reply.status(404).send({ message: 'Comment not found' });
+  }
+
+  // Only comment author can delete
+  if (comment.createdBy?.id !== user.id) {
+    return reply.status(403).send({ message: 'Only comment author can delete' });
+  }
+
+  await deleteComment(commentId);
+  return reply.send({ message: 'Comment deleted' });
+}

@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { list, getById, create, update, remove, getAuditLog, stats } from './devices.controller.js';
+import { list, getById, create, update, remove, getAuditLog, stats, addComment, editComment, removeComment } from './devices.controller.js';
 import { checkSerialNumber } from './devices.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
@@ -356,5 +356,109 @@ export async function deviceRoutes(app: FastifyInstance) {
       },
     },
     getAuditLog
+  );
+
+  // Add comment
+  app.post(
+    '/:id/comments',
+    {
+      preHandler: [authenticate, authorize('read', 'Device')],
+      schema: {
+        tags: ['Devices'],
+        summary: 'Add comment to device',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+          },
+        },
+        body: {
+          type: 'object',
+          required: ['text'],
+          properties: {
+            text: { type: 'string', minLength: 1 },
+          },
+        },
+        response: {
+          201: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              entityType: { type: 'string' },
+              entityId: { type: 'string' },
+              text: { type: 'string' },
+              createdAt: { type: 'string', format: 'date-time' },
+            },
+          },
+        },
+      },
+    },
+    addComment
+  );
+
+  // Edit comment
+  app.put(
+    '/:id/comments/:commentId',
+    {
+      preHandler: [authenticate, authorize('read', 'Device')],
+      schema: {
+        tags: ['Devices'],
+        summary: 'Edit device comment (owner only)',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id', 'commentId'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            commentId: { type: 'string', format: 'uuid' },
+          },
+        },
+        body: {
+          type: 'object',
+          required: ['text'],
+          properties: {
+            text: { type: 'string', minLength: 1 },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+          },
+        },
+      },
+    },
+    editComment
+  );
+
+  // Delete comment
+  app.delete(
+    '/:id/comments/:commentId',
+    {
+      preHandler: [authenticate, authorize('read', 'Device')],
+      schema: {
+        tags: ['Devices'],
+        summary: 'Delete device comment (owner only)',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id', 'commentId'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            commentId: { type: 'string', format: 'uuid' },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              message: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    removeComment
   );
 }
