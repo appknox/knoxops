@@ -26,6 +26,10 @@ npm-debug.log*
 # Test coverage
 coverage/
 
+# Planning / working documents (not for version control)
+PLANNER.md
+IMPLEMENTATION_PLAN.md
+
 # Drizzle
 drizzle/meta/
 uploads/

@@ -62,7 +62,8 @@ export async function listDevices(query: ListDevicesQuery): Promise<PaginatedDev
         ilike(devices.serialNumber, `%${search}%`),
         ilike(devices.manufacturer, `%${search}%`),
         ilike(devices.model, `%${search}%`),
-        ilike(devices.location, `%${search}%`)
+        ilike(devices.location, `%${search}%`),
+        ilike(devices.assignedTo, `%${search}%`)
       )
     );
   }
