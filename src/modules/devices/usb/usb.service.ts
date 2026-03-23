@@ -71,6 +71,7 @@ export interface DeviceInfo {
   imei2: string | null;
   macAddress: string | null;
   simNumber: string | null;
+  rom: string | null;
 }
 
 export async function detectConnectedDevice(): Promise<DetectResult | null> {
@@ -168,6 +169,7 @@ export async function fetchIosDeviceInfo(udid: string): Promise<DeviceInfo> {
     imei2: null,
     macAddress: null,
     simNumber: null,
+    rom: null,
   };
 
   const lines = output.split('\n');
@@ -214,6 +216,9 @@ export async function fetchIosDeviceInfo(udid: string): Promise<DeviceInfo> {
       case 'WiFiAddress':
         info.macAddress = value;
         break;
+      case 'BuildVersion':
+        info.rom = value;
+        break;
     }
   }
 
@@ -240,6 +245,7 @@ export async function fetchAndroidDeviceInfo(serial: string): Promise<DeviceInfo
     imei2: null,
     macAddress: null,
     simNumber: null,
+    rom: null,
   };
 
   const props: Record<string, string> = {};
@@ -276,6 +282,9 @@ export async function fetchAndroidDeviceInfo(serial: string): Promise<DeviceInfo
   } else if (abi.includes('armeabi') || abi.includes('arm')) {
     info.cpuArch = 'ARM';
   }
+
+  // Extract ROM — prefer LineageOS custom ROM identifier, fall back to stock build ID
+  info.rom = props['ro.lineage.version'] || props['ro.build.display.id'] || null;
 
   // On Android 10+, ro.gsm.imei and ro.boot.wifimacaddr are often restricted.
   // Use 3-stage cascade: getprop (done above) → dumpsys → service call

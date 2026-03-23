@@ -98,6 +98,7 @@ export async function usbRoutes(app: FastifyInstance) {
               imei2: { type: 'string', nullable: true },
               macAddress: { type: 'string', nullable: true },
               simNumber: { type: 'string', nullable: true },
+              rom: { type: 'string', nullable: true },
             },
           },
         },
