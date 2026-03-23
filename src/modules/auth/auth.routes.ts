@@ -8,6 +8,8 @@ import {
   validateResetToken,
   resetPasswordHandler,
   changePasswordHandler,
+  oidcInitiate,
+  oidcCallback,
 } from './auth.controller.js';
 import { authenticate } from '../../middleware/authenticate.js';
 
@@ -246,5 +248,37 @@ export async function authRoutes(app: FastifyInstance) {
       },
     },
     changePasswordHandler
+  );
+
+  // Initiate OIDC login — redirects to Google
+  app.get(
+    '/oidc',
+    {
+      schema: {
+        tags: ['Auth'],
+        summary: 'Initiate Google OIDC SSO login',
+      },
+    },
+    oidcInitiate
+  );
+
+  // OIDC callback — Google redirects here with authorization code
+  app.get(
+    '/oidc/callback',
+    {
+      schema: {
+        tags: ['Auth'],
+        summary: 'Google OIDC SSO callback',
+        querystring: {
+          type: 'object',
+          properties: {
+            code: { type: 'string' },
+            state: { type: 'string' },
+            error: { type: 'string' },
+          },
+        },
+      },
+    },
+    oidcCallback
   );
 }

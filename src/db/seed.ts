@@ -35,8 +35,7 @@ async function seed() {
       firstName: 'Ginil',
       lastName: 'Appknox',
       role: 'admin',
-      isActive: true,
-      inviteStatus: 'accepted',
+      status: 'active',
     });
     console.log('Admin user created:');
     console.log('  Email: ginil@appknox.com');

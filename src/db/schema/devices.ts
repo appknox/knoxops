@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, timestamp, text, jsonb, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, text, jsonb, pgEnum, boolean } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 
 // Device status enum
@@ -14,8 +14,10 @@ export const deviceTypeEnum = pgEnum('device_type', [
   'server',
   'workstation',
   'mobile',
+  'tablet',
   'iot',
   'network',
+  'charging_hub',
   'other',
 ]);
 
@@ -33,12 +35,13 @@ export const devices = pgTable('devices', {
   // Operational fields (direct columns)
   purpose: varchar('purpose', { length: 100 }),
   assignedTo: varchar('assigned_to', { length: 255 }),
-  // Technical specs stored in metadata (includes ipAddress, macAddress, cpuArch, rom, platform, etc.)
+  // Technical specs stored in metadata (includes macAddress, cpuArch, osVersion, platform, imei, imei2, udid, modelNumber, etc.)
   metadata: jsonb('metadata').$type<Record<string, unknown>>(),
   registeredBy: uuid('registered_by').references(() => users.id),
   lastUpdatedBy: uuid('last_updated_by').references(() => users.id),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  isDeleted: boolean('is_deleted').default(false),
 });
 
 // Types

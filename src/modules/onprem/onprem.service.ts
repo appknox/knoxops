@@ -1,18 +1,21 @@
-import { eq, and, or, ilike, sql, desc, asc } from 'drizzle-orm';
+import { eq, and, or, ilike, sql, desc, asc, inArray, isNotNull } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import {
   onpremDeployments,
   onpremStatusHistory,
   onpremComments,
+  onpremDocuments,
   OnpremDeployment,
   OnpremStatusHistory,
   OnpremComment,
+  OnpremDocument,
   DeploymentStatus,
+  DocumentCategory,
   users,
 } from '../../db/schema/index.js';
-import { NotFoundError, ConflictError } from '../../middleware/errorHandler.js';
+import { NotFoundError, ConflictError, ForbiddenError } from '../../middleware/errorHandler.js';
 import { CreateOnpremInput, UpdateOnpremInput, ListOnpremQuery } from './onprem.schema.js';
-import { getAuditLogsByEntity } from '../../services/audit-log.service.js';
+import { getAuditLogsByEntity, createAuditLog } from '../../services/audit-log.service.js';
 import type { MultipartFile } from '@fastify/multipart';
 import {
   savePrerequisiteFile,
@@ -21,6 +24,8 @@ import {
   saveSslCertificateFile,
   getSslCertificateFilePath,
   deleteSslCertificateFile,
+  saveDocumentFile,
+  deleteDocumentFile,
 } from '../../services/file.service.js';
 import { parseExcelFile, ParsedExcelData } from '../../services/excel-parser.service.js';
 import fsp from 'fs/promises';
@@ -45,7 +50,7 @@ export interface PaginatedOnprem {
 }
 
 export async function listOnprem(query: ListOnpremQuery): Promise<PaginatedOnprem> {
-  const { page, limit, search, status, environment, region, sortBy, sortOrder } = query;
+  const { page, limit, search, status, clientStatus, environmentType, currentVersion, currentVersions, csmIds, maintenancePlan, environment, region, sortBy, sortOrder } = query;
   const offset = (page - 1) * limit;
 
   const conditions = [];
@@ -65,6 +70,35 @@ export async function listOnprem(query: ListOnpremQuery): Promise<PaginatedOnpre
     conditions.push(eq(onpremDeployments.status, status));
   }
 
+  if (clientStatus) {
+    conditions.push(eq(onpremDeployments.clientStatus, clientStatus));
+  }
+
+  if (environmentType) {
+    conditions.push(eq(onpremDeployments.environmentType, environmentType));
+  }
+
+  // Support both old single currentVersion and new currentVersions array
+  if (currentVersions && Array.isArray(currentVersions) && currentVersions.length > 0) {
+    const validVersions = currentVersions.filter((v) => v && v !== '');
+    if (validVersions.length > 0) {
+      conditions.push(inArray(onpremDeployments.currentVersion, validVersions));
+    }
+  } else if (currentVersion) {
+    conditions.push(eq(onpremDeployments.currentVersion, currentVersion));
+  }
+
+  if (csmIds && Array.isArray(csmIds) && csmIds.length > 0) {
+    const validCsmIds = csmIds.filter((id) => id && id !== '');
+    if (validCsmIds.length > 0) {
+      conditions.push(inArray(onpremDeployments.associatedCsmId, validCsmIds));
+    }
+  }
+
+  if (maintenancePlan) {
+    conditions.push(eq(onpremDeployments.maintenancePlan, maintenancePlan));
+  }
+
   if (environment) {
     conditions.push(eq(onpremDeployments.environment, environment));
   }
@@ -72,6 +106,9 @@ export async function listOnprem(query: ListOnpremQuery): Promise<PaginatedOnpre
   if (region) {
     conditions.push(eq(onpremDeployments.region, region));
   }
+
+  // Filter out soft-deleted records
+  conditions.push(eq(onpremDeployments.isDeleted, false));
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -127,7 +164,7 @@ export async function getOnpremById(id: string): Promise<OnpremWithCsm> {
     })
     .from(onpremDeployments)
     .leftJoin(users, eq(onpremDeployments.associatedCsmId, users.id))
-    .where(eq(onpremDeployments.id, id))
+    .where(and(eq(onpremDeployments.id, id), eq(onpremDeployments.isDeleted, false)))
     .limit(1);
 
   if (result.length === 0) {
@@ -256,10 +293,29 @@ export async function updateOnpremStatus(
   return { before, after };
 }
 
-export async function deleteOnprem(id: string): Promise<OnpremDeployment> {
+export async function deleteOnprem(
+  id: string,
+  userId: string
+): Promise<OnpremDeployment> {
   const deployment = await getOnpremById(id);
 
-  await db.delete(onpremDeployments).where(eq(onpremDeployments.id, id));
+  await db
+    .update(onpremDeployments)
+    .set({ isDeleted: true, updatedAt: new Date() })
+    .where(eq(onpremDeployments.id, id));
+
+  await createAuditLog({
+    userId,
+    module: 'onprem',
+    action: 'deployment_deleted',
+    entityType: 'onprem_deployment',
+    entityId: id,
+    entityName: deployment.clientName,
+    changes: {
+      before: { isDeleted: false },
+      after: { isDeleted: true },
+    },
+  });
 
   return deployment;
 }
@@ -306,7 +362,7 @@ export async function checkEmailExists(
   email: string,
   excludeId?: string
 ): Promise<{ exists: boolean; deployment?: { id: string; clientName: string } }> {
-  const conditions = [eq(onpremDeployments.contactEmail, email)];
+  const conditions = [eq(onpremDeployments.contactEmail, email), eq(onpremDeployments.isDeleted, false)];
 
   if (excludeId) {
     conditions.push(sql`${onpremDeployments.id} != ${excludeId}`);
@@ -335,7 +391,7 @@ export async function checkPhoneExists(
   phone: string,
   excludeId?: string
 ): Promise<{ exists: boolean; deployment?: { id: string; clientName: string } }> {
-  const conditions = [eq(onpremDeployments.contactPhone, phone)];
+  const conditions = [eq(onpremDeployments.contactPhone, phone), eq(onpremDeployments.isDeleted, false)];
 
   if (excludeId) {
     conditions.push(sql`${onpremDeployments.id} != ${excludeId}`);
@@ -567,7 +623,7 @@ export async function updateComment(
 
   // Authorization check - only creator can edit
   if (existing.createdBy !== userId) {
-    throw new Error('Unauthorized: Only comment creator can edit');
+    throw new ForbiddenError('Only the comment creator can edit this comment');
   }
 
   await db
@@ -590,7 +646,7 @@ export async function deleteComment(commentId: string, userId: string): Promise<
 
   // Authorization check - only creator can delete
   if (existing.createdBy !== userId) {
-    throw new Error('Unauthorized: Only comment creator can delete');
+    throw new ForbiddenError('Only the comment creator can delete this comment');
   }
 
   await db
@@ -642,21 +698,22 @@ export async function getComments(
  */
 export async function getCombinedHistory(
   deploymentId: string,
-  limit: number = 100
-): Promise<CombinedHistoryEntry[]> {
+  options: { type?: string; page?: number; limit?: number } = {}
+): Promise<{ data: CombinedHistoryEntry[]; total: number; totalPages: number }> {
+  const { type = 'all', page = 1, limit = 20 } = options;
+
   // Verify deployment exists
   await getOnpremById(deploymentId);
 
   // Fetch all three types in parallel
   const [comments, auditLogs, statusHistory] = await Promise.all([
-    getComments(deploymentId, limit),
-    getAuditLogsByEntity('onprem_deployment', deploymentId, limit),
-    getOnpremStatusHistory(deploymentId, limit),
+    getComments(deploymentId, 10000),
+    getAuditLogsByEntity('onprem_deployment', deploymentId, 10000),
+    getOnpremStatusHistory(deploymentId, 10000),
   ]);
 
   // Transform and combine
-  const combined: CombinedHistoryEntry[] = [
-    // Comments
+  let combined: CombinedHistoryEntry[] = [
     ...comments.map((c) => ({
       id: c.id,
       type: 'comment' as const,
@@ -669,7 +726,6 @@ export async function getCombinedHistory(
         createdBy: c.createdBy,
       },
     })),
-    // Audit logs with user info
     ...auditLogs.map((a) => ({
       id: a.id,
       type: 'audit' as const,
@@ -682,7 +738,6 @@ export async function getCombinedHistory(
         module: a.module,
       },
     })),
-    // Status changes with user info
     ...statusHistory.map((s) => ({
       id: s.id,
       type: 'status_change' as const,
@@ -696,6 +751,205 @@ export async function getCombinedHistory(
     })),
   ];
 
-  // Sort by timestamp descending (newest first)
-  return combined.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  // Sort by timestamp descending
+  combined.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+  // Apply type filter
+  if (type === 'comments') {
+    combined = combined.filter((e) => e.type === 'comment');
+  } else if (type === 'activities') {
+    combined = combined.filter((e) => e.type !== 'comment');
+  }
+
+  const total = combined.length;
+  const totalPages = Math.ceil(total / limit);
+  const offset = (page - 1) * limit;
+  const data = combined.slice(offset, offset + limit);
+
+  return { data, total, totalPages };
+}
+
+export async function getDistinctVersions(): Promise<string[]> {
+  const results = await db
+    .selectDistinct({ currentVersion: onpremDeployments.currentVersion })
+    .from(onpremDeployments)
+    .where(and(sql`${onpremDeployments.currentVersion} IS NOT NULL`, eq(onpremDeployments.isDeleted, false)))
+    .orderBy(asc(onpremDeployments.currentVersion));
+
+  return results
+    .map((r) => r.currentVersion)
+    .filter((v): v is string => v !== null);
+}
+
+export async function getDistinctCsmUsers(): Promise<{ id: string; firstName: string; lastName: string; email: string }[]> {
+  const results = await db
+    .selectDistinct({
+      id: users.id,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      email: users.email,
+    })
+    .from(onpremDeployments)
+    .innerJoin(users, eq(onpremDeployments.associatedCsmId, users.id))
+    .where(and(
+      isNotNull(onpremDeployments.associatedCsmId),
+      eq(onpremDeployments.isDeleted, false)
+    ))
+    .orderBy(asc(users.firstName));
+
+  return results;
+}
+
+/**
+ * Upload one document file and insert DB record
+ */
+export async function uploadDocument(
+  deploymentId: string,
+  category: DocumentCategory,
+  file: MultipartFile
+): Promise<OnpremDocument> {
+  const { fileName, fileUrl, mimeType, fileSize } = await saveDocumentFile(deploymentId, category, file);
+  const [doc] = await db
+    .insert(onpremDocuments)
+    .values({
+      deploymentId,
+      category,
+      fileName,
+      fileUrl,
+      mimeType,
+      fileSize,
+    })
+    .returning();
+  return doc;
+}
+
+/**
+ * Get all documents for a deployment (optionally filtered by category)
+ */
+export async function getDocuments(
+  deploymentId: string,
+  category?: DocumentCategory
+): Promise<OnpremDocument[]> {
+  const conditions = [eq(onpremDocuments.deploymentId, deploymentId)];
+  if (category) conditions.push(eq(onpremDocuments.category, category));
+  return db.select().from(onpremDocuments).where(and(...conditions));
+}
+
+/**
+ * Delete a single document record and its file
+ */
+export async function deleteDocument(documentId: string): Promise<void> {
+  const docs = await db.select().from(onpremDocuments).where(eq(onpremDocuments.id, documentId));
+  const doc = docs[0];
+  if (!doc) throw new NotFoundError('Document not found');
+  await deleteDocumentFile(doc.fileUrl);
+  await db.delete(onpremDocuments).where(eq(onpremDocuments.id, documentId));
+}
+
+/**
+ * Build a ZIP buffer containing ALL files for a deployment
+ */
+export async function buildDeploymentZip(deploymentId: string): Promise<Buffer> {
+  const deployment = await getOnpremById(deploymentId);
+  if (!deployment) throw new NotFoundError('Deployment not found');
+
+  const docs = await getDocuments(deploymentId);
+
+  const { default: archiver } = await import('archiver');
+  const archive = archiver('zip', { zlib: { level: 6 } });
+
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+
+    archive.on('data', (chunk: Buffer) => chunks.push(chunk));
+    archive.on('end', () => resolve(Buffer.concat(chunks)));
+    archive.on('error', reject);
+
+    // Add prerequisite file
+    if (deployment.prerequisiteFileUrl) {
+      const prerequisitePath = getPrerequisiteFilePath(deployment.prerequisiteFileUrl);
+      archive.file(prerequisitePath, {
+        name: `prerequisite/${deployment.prerequisiteFileName ?? 'prerequisite'}`,
+      });
+    }
+
+    // Add SSL certificate
+    if (deployment.sslCertificateFileUrl) {
+      const sslPath = getSslCertificateFilePath(deployment.sslCertificateFileUrl);
+      const sslName = deployment.sslCertificateFileUrl.split('/').pop() || 'ssl-certificate';
+      archive.file(sslPath, { name: `ssl-certificate/${sslName}` });
+    }
+
+    // Add uploaded documents
+    for (const doc of docs) {
+      archive.file(doc.fileUrl, { name: `documents/${doc.fileName}` });
+    }
+
+    archive.finalize();
+  });
+}
+
+/**
+ * Record patch deployment for a client
+ */
+export async function recordPatchDeployment(
+  id: string,
+  data: {
+    patchDate: string;
+    newVersion?: string;
+    nextScheduledPatchDate?: string;
+  }
+): Promise<void> {
+  // Verify deployment exists
+  const deployment = await getOnpremById(id);
+  if (!deployment) {
+    throw new NotFoundError('Deployment not found');
+  }
+
+  const updateFields: Record<string, any> = {
+    lastPatchDate: new Date(data.patchDate),
+    updatedAt: new Date(),
+  };
+
+  if (data.newVersion) {
+    updateFields.currentVersion = data.newVersion;
+  }
+
+  if (data.nextScheduledPatchDate) {
+    updateFields.nextScheduledPatchDate = new Date(data.nextScheduledPatchDate);
+  }
+
+  await db
+    .update(onpremDeployments)
+    .set(updateFields)
+    .where(eq(onpremDeployments.id, id));
+
+  // Create audit log
+  await createAuditLog({
+    module: 'onprem',
+    entityType: 'OnpremDeployment',
+    entityId: id,
+    action: 'record_patch',
+    metadata: { version: data.newVersion, nextScheduledPatchDate: data.nextScheduledPatchDate },
+  });
+}
+
+export async function searchClients(
+  q: string
+): Promise<{ id: string; clientName: string; contactEmail: string | null }[]> {
+  return db
+    .select({
+      id: onpremDeployments.id,
+      clientName: onpremDeployments.clientName,
+      contactEmail: onpremDeployments.contactEmail,
+    })
+    .from(onpremDeployments)
+    .where(
+      and(
+        eq(onpremDeployments.clientStatus, 'active'),
+        ilike(onpremDeployments.clientName, `%${q}%`)
+      )
+    )
+    .orderBy(asc(onpremDeployments.clientName))
+    .limit(10);
 }

@@ -1,12 +1,11 @@
-import { eq, and, or, gt, desc } from 'drizzle-orm';
+import { eq, and, ne, lt } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { userInvites, users, UserInvite, Role, NewUserInvite } from '../../db/schema/index.js';
-import { generateInviteToken, getExpirationDate } from '../../lib/jwt.js';
+import { users, User, Role } from '../../db/schema/index.js';
+import { generateInviteToken } from '../../lib/jwt.js';
 import { hashPassword } from '../../lib/password.js';
 import { sendInviteEmail } from '../../services/email.service.js';
-import { BadRequestError, NotFoundError, ConflictError } from '../../middleware/errorHandler.js';
-
-const INVITE_EXPIRY = '7d';
+import { BadRequestError, NotFoundError, ConflictError, TooManyRequestsError } from '../../middleware/errorHandler.js';
+import { env } from '../../config/env.js';
 
 export interface CreateInviteParams {
   email: string;
@@ -17,178 +16,222 @@ export interface CreateInviteParams {
   inviterName: string;
 }
 
-export async function createInvite(params: CreateInviteParams): Promise<UserInvite> {
+export interface InviteResponse {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: Role;
+  status: 'pending' | 'active' | 'expired' | 'deleted';
+  expiresAt: Date | null;
+  createdAt: Date;
+}
+
+function mapUserToInvite(user: User): InviteResponse {
+  return {
+    id: user.id,
+    email: user.email,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    role: user.role,
+    status: user.status as 'pending' | 'active' | 'expired' | 'deleted',
+    expiresAt: user.inviteExpiresAt,
+    createdAt: user.createdAt,
+  };
+}
+
+export async function createInvite(params: CreateInviteParams): Promise<InviteResponse> {
   const email = params.email.toLowerCase();
 
-  // Check if user already exists
+  // Check if user already exists (not soft-deleted)
   const existingUser = await db.query.users.findFirst({
-    where: eq(users.email, email),
+    where: and(eq(users.email, email), ne(users.status, 'deleted')),
   });
 
-  if (existingUser) {
+  if (existingUser?.status === 'pending') {
+    throw new ConflictError('A pending invite already exists for this email');
+  }
+  if (existingUser?.status === 'active') {
     throw new ConflictError('A user with this email already exists');
   }
 
-  // Check for pending invite
-  const existingInvite = await db.query.userInvites.findFirst({
-    where: and(
-      eq(userInvites.email, email),
-      eq(userInvites.status, 'pending'),
-      gt(userInvites.expiresAt, new Date())
-    ),
-  });
-
-  if (existingInvite) {
-    throw new ConflictError('An active invite already exists for this email');
-  }
-
   const inviteToken = generateInviteToken();
-  const expiresAt = getExpirationDate(INVITE_EXPIRY);
+  const inviteExpiresAt = new Date();
+  inviteExpiresAt.setDate(inviteExpiresAt.getDate() + env.INVITE_EXPIRY_DAYS);
+  const now = new Date();
 
-  const [invite] = await db
-    .insert(userInvites)
+  const [newUser] = await db
+    .insert(users)
     .values({
       email,
       firstName: params.firstName,
       lastName: params.lastName,
       role: params.role,
+      status: 'pending',
       inviteToken,
+      inviteExpiresAt,
+      inviteLastSentAt: now,
       invitedBy: params.invitedBy,
-      expiresAt,
+      passwordHash: null,
     })
     .returning();
 
   // Send invite email
   await sendInviteEmail(email, inviteToken, params.inviterName, params.role);
 
-  return invite;
+  return mapUserToInvite(newUser);
 }
 
-export async function listInvites(status?: 'pending' | 'accepted' | 'expired' | 'revoked'): Promise<UserInvite[]> {
-  if (status) {
-    return db.query.userInvites.findMany({
-      where: eq(userInvites.status, status),
-      orderBy: [desc(userInvites.createdAt)],
-    });
-  }
-
-  return db.query.userInvites.findMany({
-    orderBy: [desc(userInvites.createdAt)],
-  });
-}
-
-export async function getInviteByToken(token: string): Promise<UserInvite | null> {
-  const invite = await db.query.userInvites.findFirst({
-    where: eq(userInvites.inviteToken, token),
+export async function listInvites(): Promise<InviteResponse[]> {
+  const invites = await db.query.users.findMany({
+    where: ne(users.status, 'active'),
   });
 
-  return invite ?? null;
+  return invites.map(mapUserToInvite);
 }
 
-export async function validateInviteToken(token: string): Promise<UserInvite> {
-  const invite = await getInviteByToken(token);
+export async function validateInviteToken(token: string): Promise<User> {
+  const user = await db.query.users.findFirst({
+    where: eq(users.inviteToken, token),
+  });
 
-  if (!invite) {
+  if (!user || user.status === 'deleted') {
     throw new NotFoundError('Invalid invite token');
   }
 
-  if (invite.status === 'accepted') {
+  if (user.status === 'active') {
     throw new BadRequestError('This invite has already been accepted');
   }
 
-  if (invite.status === 'revoked') {
-    throw new BadRequestError('This invite has been revoked');
-  }
-
-  if (invite.expiresAt < new Date()) {
-    // Update status to expired
+  // Auto-expire if past deadline
+  if (user.inviteExpiresAt && user.inviteExpiresAt < new Date()) {
     await db
-      .update(userInvites)
+      .update(users)
       .set({ status: 'expired', updatedAt: new Date() })
-      .where(eq(userInvites.id, invite.id));
+      .where(eq(users.id, user.id));
 
     throw new BadRequestError('This invite has expired');
   }
 
-  return invite;
+  return user;
 }
 
 export async function acceptInvite(token: string, password: string): Promise<void> {
-  const invite = await validateInviteToken(token);
+  const user = await validateInviteToken(token);
 
   const passwordHash = await hashPassword(password);
 
-  // Create user
-  await db.insert(users).values({
-    email: invite.email,
-    passwordHash,
-    firstName: invite.firstName,
-    lastName: invite.lastName,
-    role: invite.role,
-    isActive: true,
-    inviteStatus: 'accepted',
-    invitedBy: invite.invitedBy,
-  });
-
-  // Update invite status
   await db
-    .update(userInvites)
+    .update(users)
     .set({
-      status: 'accepted',
-      acceptedAt: new Date(),
+      status: 'active',
+      passwordHash,
+      inviteToken: null,
+      inviteExpiresAt: null,
       updatedAt: new Date(),
     })
-    .where(eq(userInvites.id, invite.id));
+    .where(eq(users.id, user.id));
 }
 
-export async function revokeInvite(inviteId: string): Promise<void> {
-  const invite = await db.query.userInvites.findFirst({
-    where: eq(userInvites.id, inviteId),
+export async function revokeInvite(userId: string): Promise<void> {
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
   });
 
-  if (!invite) {
-    throw new NotFoundError('Invite not found');
+  if (!user) {
+    throw new NotFoundError('User not found');
   }
 
-  if (invite.status !== 'pending') {
-    throw new BadRequestError('Only pending invites can be revoked');
+  if (user.status === 'active' || user.status === 'deleted') {
+    throw new BadRequestError('Cannot revoke this invite');
   }
 
   await db
-    .update(userInvites)
-    .set({ status: 'revoked', updatedAt: new Date() })
-    .where(eq(userInvites.id, inviteId));
+    .update(users)
+    .set({ status: 'deleted', updatedAt: new Date() })
+    .where(eq(users.id, userId));
 }
 
-export async function resendInvite(inviteId: string, inviterName: string): Promise<UserInvite> {
-  const invite = await db.query.userInvites.findFirst({
-    where: eq(userInvites.id, inviteId),
+export async function resendInvite(userId: string, inviterName: string): Promise<void> {
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
   });
 
-  if (!invite) {
-    throw new NotFoundError('Invite not found');
+  if (!user) {
+    throw new NotFoundError('User not found');
   }
 
-  if (invite.status !== 'pending' && invite.status !== 'expired') {
-    throw new BadRequestError('Only pending or expired invites can be resent');
+  // Only block re-invite for active users
+  if (user.status === 'active') {
+    throw new BadRequestError('User is already active and does not need a new invitation');
   }
 
-  const newToken = generateInviteToken();
-  const newExpiresAt = getExpirationDate(INVITE_EXPIRY);
+  // Rate limit: only one invite email per 24 hours
+  if (user.inviteLastSentAt) {
+    const msSinceLast = Date.now() - user.inviteLastSentAt.getTime();
+    const msIn24h = 24 * 60 * 60 * 1000;
+    if (msSinceLast < msIn24h) {
+      const nextAllowedAt = new Date(user.inviteLastSentAt.getTime() + msIn24h);
+      throw new TooManyRequestsError(
+        `An invite was already sent today. You can resend again after ${nextAllowedAt.toISOString()}.`
+      );
+    }
+  }
 
-  const [updatedInvite] = await db
-    .update(userInvites)
+  // Allow: pending, expired, deleted — all reuse the same row
+  const inviteToken = generateInviteToken();
+  const inviteExpiresAt = new Date();
+  inviteExpiresAt.setDate(inviteExpiresAt.getDate() + env.INVITE_EXPIRY_DAYS);
+  const now = new Date();
+
+  await db
+    .update(users)
     .set({
-      inviteToken: newToken,
-      expiresAt: newExpiresAt,
       status: 'pending',
+      inviteToken,
+      inviteExpiresAt,
+      inviteLastSentAt: now,
+      updatedAt: now,
+    })
+    .where(eq(users.id, userId));
+
+  await sendInviteEmail(user.email, inviteToken, inviterName, user.role);
+}
+
+export async function acceptInviteViaSso(email: string): Promise<void> {
+  const user = await db.query.users.findFirst({
+    where: and(eq(users.email, email.toLowerCase()), eq(users.status, 'pending')),
+  });
+
+  if (!user) return; // no pending invite — caller decides what to do
+
+  // Auto-expire if past deadline
+  if (user.inviteExpiresAt && user.inviteExpiresAt < new Date()) {
+    await db
+      .update(users)
+      .set({ status: 'expired', updatedAt: new Date() })
+      .where(eq(users.id, user.id));
+    return;
+  }
+
+  await db
+    .update(users)
+    .set({
+      status: 'active',
+      inviteToken: null,
+      inviteExpiresAt: null,
       updatedAt: new Date(),
     })
-    .where(eq(userInvites.id, inviteId))
-    .returning();
+    .where(eq(users.id, user.id));
+}
 
-  // Resend email
-  await sendInviteEmail(invite.email, newToken, inviterName, invite.role);
-
-  return updatedInvite;
+export async function getPendingInviteByEmail(email: string): Promise<User | null> {
+  return (
+    (await db.query.users.findFirst({
+      where: and(
+        eq(users.email, email.toLowerCase()),
+        eq(users.status, 'pending')
+      ),
+    })) ?? null
+  );
 }

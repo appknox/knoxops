@@ -11,9 +11,9 @@ const userSchema = {
     firstName: { type: 'string' },
     lastName: { type: 'string' },
     role: { type: 'string' },
-    isActive: { type: 'boolean' },
-    inviteStatus: { type: 'string' },
+    status: { type: 'string', enum: ['pending', 'active', 'expired', 'deleted'] },
     lastLoginAt: { type: 'string', format: 'date-time', nullable: true },
+    inviteLastSentAt: { type: 'string', format: 'date-time', nullable: true },
     createdAt: { type: 'string', format: 'date-time' },
     updatedAt: { type: 'string', format: 'date-time' },
   },
@@ -47,7 +47,7 @@ export async function userRoutes(app: FastifyInstance) {
                 'full_editor',
               ],
             },
-            isActive: { type: 'string', enum: ['true', 'false'] },
+            status: { type: 'string' },
             sortBy: {
               type: 'string',
               enum: ['email', 'firstName', 'lastName', 'createdAt', 'lastLoginAt'],
@@ -135,7 +135,6 @@ export async function userRoutes(app: FastifyInstance) {
                 'full_editor',
               ],
             },
-            isActive: { type: 'boolean' },
           },
         },
         response: {

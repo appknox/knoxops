@@ -33,6 +33,14 @@ import {
   deleteComment,
   getComments,
   getCombinedHistory,
+  getDistinctVersions,
+  getDistinctCsmUsers,
+  uploadDocument,
+  getDocuments,
+  deleteDocument,
+  buildDeploymentZip,
+  recordPatchDeployment,
+  searchClients as searchClientsService,
 } from './onprem.service.js';
 import { createAuditLog, getAuditLogsByEntity } from '../../services/audit-log.service.js';
 import { User } from '../../db/schema/index.js';
@@ -148,22 +156,8 @@ export async function remove(
 ) {
   const { id } = request.params;
   const user = request.user as User;
-  const ipAddress = request.ip;
-  const userAgent = request.headers['user-agent'];
 
-  const deployment = await deleteOnprem(id);
-
-  await createAuditLog({
-    userId: user.id,
-    module: 'onprem',
-    action: 'deployment_deleted',
-    entityType: 'onprem_deployment',
-    entityId: deployment.id,
-    entityName: deployment.name,
-    changes: { before: deployment as unknown as Record<string, unknown> },
-    ipAddress: ipAddress ?? undefined,
-    userAgent: userAgent ?? undefined,
-  });
+  const deployment = await deleteOnprem(id, user.id);
 
   return reply.send({ message: 'Deployment deleted successfully' });
 }
@@ -353,12 +347,138 @@ export async function getDeploymentComments(
 }
 
 export async function getCombinedDeploymentHistory(
+  request: FastifyRequest<{ Params: { id: string }; Querystring: { type?: string; page?: string; limit?: string } }>,
+  reply: FastifyReply
+) {
+  const { id } = request.params;
+  const { type = 'all', page = '1', limit = '20' } = request.query;
+
+  const pageNum = Math.max(1, parseInt(page) || 1);
+  const limitNum = Math.min(50, Math.max(1, parseInt(limit) || 20));
+
+  const result = await getCombinedHistory(id, { type, page: pageNum, limit: limitNum });
+
+  return reply.send({
+    data: result.data,
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      total: result.total,
+      totalPages: result.totalPages,
+    },
+  });
+}
+
+export async function getDistinctAppknoxVersions(
+  request: FastifyRequest,
+  reply: FastifyReply
+) {
+  const versions = await getDistinctVersions();
+  return reply.send({ data: versions });
+}
+
+export async function getDistinctCsmUsersHandler(
+  request: FastifyRequest,
+  reply: FastifyReply
+) {
+  const results = await getDistinctCsmUsers();
+  return reply.send({ data: results });
+}
+
+// Document upload handlers
+export async function uploadDocuments(
+  request: FastifyRequest<{ Params: { id: string }; Querystring: { category: 'rfp' | 'other' } }>,
+  reply: FastifyReply
+) {
+  const { id } = request.params;
+  const { category } = request.query;
+
+  const parts = request.files();
+  const results = [];
+
+  for await (const file of parts) {
+    const doc = await uploadDocument(id, category, file);
+    results.push(doc);
+  }
+
+  return reply.send(results);
+}
+
+export async function listDocuments(
+  request: FastifyRequest<{ Params: { id: string }; Querystring: { category?: 'rfp' | 'other' } }>,
+  reply: FastifyReply
+) {
+  const { id } = request.params;
+  const { category } = request.query;
+  const docs = await getDocuments(id, category);
+  return reply.send(docs);
+}
+
+export async function removeDocument(
+  request: FastifyRequest<{ Params: { id: string; docId: string } }>,
+  reply: FastifyReply
+) {
+  const { docId } = request.params;
+  await deleteDocument(docId);
+  return reply.send({ message: 'Document deleted' });
+}
+
+export async function downloadAll(
   request: FastifyRequest<{ Params: { id: string } }>,
   reply: FastifyReply
 ) {
   const { id } = request.params;
+  const zipBuffer = await buildDeploymentZip(id);
+  const deployment = await getOnpremById(id);
+  const zipName = `${deployment?.clientName ?? 'deployment'}-files.zip`;
 
-  const history = await getCombinedHistory(id);
+  return reply
+    .header('Content-Type', 'application/zip')
+    .header('Content-Disposition', `attachment; filename="${zipName}"`)
+    .send(zipBuffer);
+}
 
-  return reply.send({ data: history });
+export async function recordPatch(
+  request: FastifyRequest<{
+    Params: { id: string };
+    Body: {
+      patchDate: string;
+      newVersion?: string;
+      nextScheduledPatchDate?: string;
+    };
+  }>,
+  reply: FastifyReply
+) {
+  const { id } = request.params;
+  const { patchDate, newVersion, nextScheduledPatchDate } = request.body;
+
+  await recordPatchDeployment(id, { patchDate, newVersion, nextScheduledPatchDate });
+  return reply.send({ message: 'Patch deployment recorded successfully' });
+}
+
+export async function searchClients(
+  request: FastifyRequest<{
+    Querystring: { q?: string };
+  }>,
+  reply: FastifyReply
+) {
+  const { q } = request.query;
+
+  if (!q || q.trim().length === 0) {
+    return reply.status(400).send({
+      success: false,
+      message: 'Search query required (minimum 1 character)',
+    });
+  }
+
+  try {
+    const results = await searchClientsService(q.trim());
+    reply.send({ data: results });
+  } catch (error) {
+    console.error('Search clients failed:', error);
+    reply.status(500).send({
+      success: false,
+      message: 'Failed to search clients',
+    });
+  }
 }

@@ -128,6 +128,38 @@ export const listOnpremQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional().default(20),
   search: z.string().optional(),
   status: z.enum(deploymentStatusEnum.enumValues).optional(),
+  clientStatus: clientStatusEnum.optional(),
+  environmentType: environmentTypeEnum.optional(),
+  currentVersion: z.string().optional(),
+  currentVersions: z.union([z.string(), z.array(z.string())]).optional().transform((val) => {
+    if (val === undefined || val === null || val === '') return undefined;
+    if (Array.isArray(val)) {
+      return val.filter((v) => v !== '');
+    }
+    if (typeof val === 'string') {
+      // Handle comma-separated values
+      return val
+        .split(',')
+        .map((v) => v.trim())
+        .filter((v) => v !== '');
+    }
+    return undefined;
+  }),
+  csmIds: z.union([z.string(), z.array(z.string())]).optional().transform((val) => {
+    if (val === undefined || val === null || val === '') return undefined;
+    if (Array.isArray(val)) {
+      return val.filter((v) => v !== '');
+    }
+    if (typeof val === 'string') {
+      // Handle comma-separated values
+      return val
+        .split(',')
+        .map((v) => v.trim())
+        .filter((v) => v !== '');
+    }
+    return undefined;
+  }),
+  maintenancePlan: maintenancePlanEnum.optional(),
   environment: z.string().optional(),
   region: z.string().optional(),
   sortBy: z.enum(['clientName', 'createdAt', 'updatedAt', 'status', 'customerName', 'lastPatchDate']).optional().default('createdAt'),

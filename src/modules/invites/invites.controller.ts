@@ -1,4 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
+import { eq } from 'drizzle-orm';
+import { db } from '../../db/index.js';
 import {
   createInviteSchema,
   acceptInviteSchema,
@@ -14,7 +16,7 @@ import {
   resendInvite,
 } from './invites.service.js';
 import { createAuditLog } from '../../services/audit-log.service.js';
-import { User } from '../../db/schema/index.js';
+import { User, users } from '../../db/schema/index.js';
 
 export async function sendInvite(
   request: FastifyRequest<{ Body: CreateInviteInput }>,
@@ -85,7 +87,7 @@ export async function validateInvite(
     firstName: invite.firstName,
     lastName: invite.lastName,
     role: invite.role,
-    expiresAt: invite.expiresAt,
+    expiresAt: invite.inviteExpiresAt,
   });
 }
 
@@ -98,7 +100,7 @@ export async function acceptInviteHandler(
   const ipAddress = request.ip;
   const userAgent = request.headers['user-agent'];
 
-  const invite = await validateInviteToken(token);
+  const user = await validateInviteToken(token);
 
   await acceptInvite(token, password);
 
@@ -106,9 +108,9 @@ export async function acceptInviteHandler(
     module: 'users',
     action: 'invite_accepted',
     entityType: 'user_invite',
-    entityId: invite.id,
-    entityName: invite.email,
-    metadata: { role: invite.role },
+    entityId: user.id,
+    entityName: user.email,
+    metadata: { role: user.role },
     ipAddress: ipAddress ?? undefined,
     userAgent: userAgent ?? undefined,
   });
@@ -145,27 +147,36 @@ export async function resendInviteHandler(
   reply: FastifyReply
 ) {
   const { id } = request.params;
-  const user = request.user as User;
+  const admin = request.user as User;
   const ipAddress = request.ip;
   const userAgent = request.headers['user-agent'];
 
-  const invite = await resendInvite(id, `${user.firstName} ${user.lastName}`);
+  await resendInvite(id, `${admin.firstName} ${admin.lastName}`);
+
+  // Fetch updated user
+  const updatedUser = await db.query.users.findFirst({
+    where: eq(users.id, id),
+  });
+
+  if (!updatedUser) {
+    throw new Error('User not found after resend');
+  }
 
   await createAuditLog({
-    userId: user.id,
+    userId: admin.id,
     module: 'users',
     action: 'invite_resent',
     entityType: 'user_invite',
     entityId: id,
-    entityName: invite.email,
+    entityName: updatedUser.email,
     ipAddress: ipAddress ?? undefined,
     userAgent: userAgent ?? undefined,
   });
 
   return reply.send({
-    id: invite.id,
-    email: invite.email,
-    expiresAt: invite.expiresAt,
+    id: updatedUser.id,
+    email: updatedUser.email,
+    expiresAt: updatedUser.inviteExpiresAt,
     message: 'Invite resent successfully',
   });
 }

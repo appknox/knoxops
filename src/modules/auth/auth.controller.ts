@@ -22,10 +22,17 @@ import {
   validatePasswordResetToken,
   resetPassword,
   changePassword,
+  getOidcAuthUrl,
+  exchangeOidcCode,
 } from './auth.service.js';
+import {
+  acceptInviteViaSso,
+  getPendingInviteByEmail,
+} from '../invites/invites.service.js';
 import { createAuditLog } from '../../services/audit-log.service.js';
 import { sendPasswordResetEmail } from '../../services/email.service.js';
 import { User } from '../../db/schema/index.js';
+import { env } from '../../config/env.js';
 
 export async function login(
   request: FastifyRequest<{ Body: LoginInput }>,
@@ -157,7 +164,7 @@ export async function forgotPassword(
   const user = await findUserByEmail(email);
 
   // Only proceed if user exists, is active, and has accepted invite
-  if (user && user.isActive && user.inviteStatus === 'accepted') {
+  if (user && user.status === 'active') {
     const token = await createPasswordResetToken(user.id);
     await sendPasswordResetEmail(email, token, `${user.firstName} ${user.lastName}`);
 
@@ -248,4 +255,78 @@ export async function changePasswordHandler(
   return reply.send({
     message: 'Password changed successfully.',
   });
+}
+
+export async function oidcInitiate(_request: FastifyRequest, reply: FastifyReply) {
+  const url = getOidcAuthUrl();
+  return reply.redirect(url);
+}
+
+export async function oidcCallback(request: FastifyRequest, reply: FastifyReply) {
+  const { code, error } = request.query as { code?: string; error?: string };
+  const ipAddress = request.ip;
+  const userAgent = request.headers['user-agent'];
+
+  if (error || !code) {
+    // Google rejected or user cancelled — redirect to login with error flag
+    return reply.redirect(`${env.FRONTEND_URL}/login?error=oidc_failed`);
+  }
+
+  try {
+    const { email } = await exchangeOidcCode(code);
+    let user = await findUserByEmail(email);
+
+    if (!user) {
+      // Check for pending invite — auto-accept on first SSO login
+      const invite = await getPendingInviteByEmail(email);
+      if (invite) {
+        await acceptInviteViaSso(email);
+        user = await findUserByEmail(email); // now exists
+      } else {
+        throw new Error('No account found for this Google email. Contact your administrator.');
+      }
+    }
+
+    if (!user || user.status !== 'active') {
+      throw new Error('Account is not active. Contact your administrator.');
+    }
+
+    // Generate tokens
+    const accessToken = request.server.jwt.sign({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+    });
+    const refreshToken = await createRefreshToken(user.id);
+
+    // Update last login
+    await updateLastLogin(user.id);
+
+    // Log successful OIDC login
+    await createAuditLog({
+      userId: user.id,
+      module: 'auth',
+      action: 'oidc_login',
+      entityType: 'user',
+      entityId: user.id,
+      entityName: `${user.firstName} ${user.lastName}`,
+      ipAddress: ipAddress ?? undefined,
+      userAgent: userAgent ?? undefined,
+    });
+
+    // Redirect to frontend AuthCallback with tokens in hash (same pattern as existing auth flow)
+    const redirectUrl = `${env.FRONTEND_URL}/auth/callback#accessToken=${accessToken}&refreshToken=${refreshToken}`;
+    return reply.redirect(redirectUrl);
+  } catch (error) {
+    // Log failed OIDC login
+    await createAuditLog({
+      module: 'auth',
+      action: 'oidc_login_failed',
+      metadata: { reason: (error as Error).message },
+      ipAddress: ipAddress ?? undefined,
+      userAgent: userAgent ?? undefined,
+    });
+
+    return reply.redirect(`${env.FRONTEND_URL}/login?error=oidc_unauthorized`);
+  }
 }

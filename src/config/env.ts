@@ -28,6 +28,24 @@ const envSchema = z.object({
   // App
   APP_URL: z.string().url(),
   FRONTEND_URL: z.string().url(),
+
+  // OIDC (Google SSO)
+  OIDC_CLIENT_ID: z.string().min(1),
+  OIDC_CLIENT_SECRET: z.string().min(1),
+  OIDC_ISSUER: z.string().url().default('https://accounts.google.com'),
+  OIDC_CALLBACK_URL: z.string().url(),
+
+  // Invite expiry
+  INVITE_EXPIRY_DAYS: z.coerce.number().int().positive().default(5),
+
+  // Slack
+  SLACK_WEBHOOK_URL: z.string().url().optional(),
+  SLACK_DEVICE_WEBHOOK_URL: z.string().url().optional(),
+
+  // GitHub (for releases)
+  GITHUB_TOKEN: z.string().min(1).optional(),
+  GITHUB_OWNER: z.string().min(1).optional(),
+  GITHUB_REPO: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

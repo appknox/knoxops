@@ -19,6 +19,14 @@ import {
   deleteDeploymentComment,
   getDeploymentComments,
   getCombinedDeploymentHistory,
+  getDistinctAppknoxVersions,
+  getDistinctCsmUsersHandler,
+  uploadDocuments,
+  listDocuments,
+  removeDocument,
+  downloadAll,
+  recordPatch,
+  searchClients,
 } from './onprem.controller.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
@@ -144,6 +152,19 @@ export async function onpremRoutes(app: FastifyInstance) {
               type: 'string',
               enum: ['healthy', 'degraded', 'offline', 'maintenance', 'provisioning', 'decommissioned'],
             },
+            clientStatus: {
+              type: 'string',
+              enum: ['active', 'inactive'],
+            },
+            environmentType: {
+              type: 'string',
+              enum: ['poc', 'production'],
+            },
+            currentVersion: { type: 'string' },
+            maintenancePlan: {
+              type: 'string',
+              enum: ['quarterly', 'annually'],
+            },
             environment: { type: 'string' },
             region: { type: 'string' },
             sortBy: {
@@ -174,6 +195,45 @@ export async function onpremRoutes(app: FastifyInstance) {
       },
     },
     list
+  );
+
+  // Search clients (for autosuggest)
+  app.get(
+    '/search',
+    {
+      preHandler: [authenticate, authorize('read', 'OnPrem')],
+      schema: {
+        tags: ['On-prem'],
+        summary: 'Search active clients by name',
+        security: [{ bearerAuth: [] }],
+        querystring: {
+          type: 'object',
+          required: ['q'],
+          properties: {
+            q: { type: 'string', minLength: 1 },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              data: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string', format: 'uuid' },
+                    clientName: { type: 'string' },
+                    contactEmail: { type: 'string', format: 'email' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    searchClients
   );
 
   // Get deployment by ID
@@ -311,6 +371,44 @@ export async function onpremRoutes(app: FastifyInstance) {
       },
     },
     update
+  );
+
+  // Record patch deployment
+  app.patch(
+    '/:id/record-patch',
+    {
+      preHandler: [authenticate, authorize('update', 'OnPrem')],
+      schema: {
+        tags: ['On-prem'],
+        summary: 'Record patch deployment',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+          },
+        },
+        body: {
+          type: 'object',
+          required: ['patchDate'],
+          properties: {
+            patchDate: { type: 'string' },
+            newVersion: { type: 'string', maxLength: 50 },
+            nextScheduledPatchDate: { type: 'string' },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              message: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    recordPatch
   );
 
   // Update deployment status
@@ -657,6 +755,64 @@ export async function onpremRoutes(app: FastifyInstance) {
     checkPhone
   );
 
+  // Get distinct Appknox versions
+  app.get(
+    '/distinct-versions',
+    {
+      preHandler: [authenticate, authorize('read', 'OnPrem')],
+      schema: {
+        tags: ['On-prem'],
+        summary: 'Get distinct Appknox versions across all deployments',
+        security: [{ bearerAuth: [] }],
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              data: {
+                type: 'array',
+                items: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+    },
+    getDistinctAppknoxVersions
+  );
+
+  // Get distinct CSM users
+  app.get(
+    '/distinct-csm-users',
+    {
+      preHandler: [authenticate, authorize('read', 'OnPrem')],
+      schema: {
+        tags: ['On-prem'],
+        summary: 'Get distinct CSM users assigned to on-prem deployments',
+        security: [{ bearerAuth: [] }],
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              data: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    firstName: { type: 'string' },
+                    lastName: { type: 'string' },
+                    email: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    getDistinctCsmUsersHandler
+  );
+
   // ============================================
   // COMMENT ROUTES
   // ============================================
@@ -677,6 +833,14 @@ export async function onpremRoutes(app: FastifyInstance) {
             id: { type: 'string', format: 'uuid' },
           },
         },
+        querystring: {
+          type: 'object',
+          properties: {
+            type: { type: 'string', enum: ['all', 'comments', 'activities'], default: 'all' },
+            page: { type: 'integer', minimum: 1, default: 1 },
+            limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+          },
+        },
         response: {
           200: {
             type: 'object',
@@ -689,16 +853,18 @@ export async function onpremRoutes(app: FastifyInstance) {
                     id: { type: 'string' },
                     type: { type: 'string', enum: ['comment', 'audit', 'status_change'] },
                     timestamp: { type: 'string', format: 'date-time' },
-                    user: {
-                      type: 'object',
-                      nullable: true,
-                      additionalProperties: true
-                    },
-                    data: {
-                      type: 'object',
-                      additionalProperties: true
-                    },
+                    user: { type: 'object', nullable: true, additionalProperties: true },
+                    data: { type: 'object', additionalProperties: true },
                   },
+                },
+              },
+              pagination: {
+                type: 'object',
+                properties: {
+                  page: { type: 'integer' },
+                  limit: { type: 'integer' },
+                  total: { type: 'integer' },
+                  totalPages: { type: 'integer' },
                 },
               },
             },
@@ -796,7 +962,7 @@ export async function onpremRoutes(app: FastifyInstance) {
   app.put(
     '/:id/comments/:commentId',
     {
-      preHandler: [authenticate, authorize('read', 'OnPrem')],
+      preHandler: [authenticate, authorize('update', 'OnPrem')],
       schema: {
         tags: ['On-prem'],
         summary: 'Update deployment comment (only by creator)',
@@ -835,7 +1001,7 @@ export async function onpremRoutes(app: FastifyInstance) {
   app.delete(
     '/:id/comments/:commentId',
     {
-      preHandler: [authenticate, authorize('read', 'OnPrem')],
+      preHandler: [authenticate, authorize('delete', 'OnPrem')],
       schema: {
         tags: ['On-prem'],
         summary: 'Delete deployment comment (only by creator)',
@@ -859,5 +1025,90 @@ export async function onpremRoutes(app: FastifyInstance) {
       },
     },
     deleteDeploymentComment
+  );
+
+  // Document upload route
+  app.post(
+    '/:id/documents',
+    {
+      preHandler: [authenticate, authorize('update', 'OnPrem')],
+      config: { isMultipart: true },
+      schema: {
+        tags: ['On-prem'],
+        summary: 'Upload RFP or other documents',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string', format: 'uuid' } },
+        },
+        querystring: {
+          type: 'object',
+          required: ['category'],
+          properties: { category: { type: 'string', enum: ['rfp', 'other'] } },
+        },
+      },
+    },
+    uploadDocuments
+  );
+
+  // List documents route
+  app.get(
+    '/:id/documents',
+    {
+      preHandler: [authenticate, authorize('read', 'OnPrem')],
+      schema: {
+        tags: ['On-prem'],
+        summary: 'List documents for a deployment',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string', format: 'uuid' } },
+        },
+      },
+    },
+    listDocuments
+  );
+
+  // Delete document route
+  app.delete(
+    '/:id/documents/:docId',
+    {
+      preHandler: [authenticate, authorize('update', 'OnPrem')],
+      schema: {
+        tags: ['On-prem'],
+        summary: 'Delete a document',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id', 'docId'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            docId: { type: 'string', format: 'uuid' },
+          },
+        },
+      },
+    },
+    removeDocument
+  );
+
+  // Download all files as ZIP route
+  app.get(
+    '/:id/download-all',
+    {
+      preHandler: [authenticate, authorize('read', 'OnPrem')],
+      schema: {
+        tags: ['On-prem'],
+        summary: 'Download all files as ZIP',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string', format: 'uuid' } },
+        },
+      },
+    },
+    downloadAll
   );
 }

@@ -6,7 +6,7 @@ export async function registerSwagger(app: FastifyInstance) {
   await app.register(swagger, {
     openapi: {
       info: {
-        title: 'KnoxAdmin API',
+        title: 'KnoxOps API',
         description: 'Internal admin tool API for device and on-prem management',
         version: '1.0.0',
       },

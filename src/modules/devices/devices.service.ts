@@ -3,6 +3,30 @@ import { db } from '../../db/index.js';
 import { devices, Device, NewDevice, DeviceStatus, DeviceType } from '../../db/schema/index.js';
 import { NotFoundError, ConflictError } from '../../middleware/errorHandler.js';
 import { CreateDeviceInput, UpdateDeviceInput, ListDevicesQuery } from './devices.schema.js';
+import { createAuditLog } from '../../services/audit-log.service.js';
+
+// Platform prefix mapping for auto-generated device names
+const PLATFORM_PREFIX: Record<string, string> = {
+  android: 'A',
+  ios: 'B',
+  cambrionix: 'C',
+};
+
+// Generate auto-assigned device name based on platform
+async function generateDeviceName(platform: string): Promise<string> {
+  const prefix = PLATFORM_PREFIX[platform.toLowerCase()] ?? 'D';
+  const existing = await db
+    .select({ name: devices.name })
+    .from(devices)
+    .where(and(sql`${devices.name} ~ ${`^${prefix}[0-9]+$`}`, eq(devices.isDeleted, false)));
+
+  const nums = existing
+    .map(r => parseInt(r.name.slice(prefix.length), 10))
+    .filter(n => !isNaN(n));
+
+  const next = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+  return `${prefix}${String(next).padStart(3, '0')}`;
+}
 
 // Optimized list item type (only fields needed for table display)
 export interface DeviceListItem {
@@ -65,6 +89,9 @@ export async function listDevices(query: ListDevicesQuery): Promise<PaginatedDev
     conditions.push(sql`${devices.metadata}->>'platform' = ${platform}`);
   }
 
+  // Filter out soft-deleted records
+  conditions.push(eq(devices.isDeleted, false));
+
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
   const sortColumn = {
@@ -84,6 +111,7 @@ export async function listDevices(query: ListDevicesQuery): Promise<PaginatedDev
         id: devices.id,
         name: devices.name,
         status: devices.status,
+        type: devices.type,
         model: devices.model,
         platform: sql<string | null>`${devices.metadata}->>'platform'`,
         purpose: devices.purpose,
@@ -115,7 +143,7 @@ export async function listDevices(query: ListDevicesQuery): Promise<PaginatedDev
 
 export async function getDeviceById(id: string): Promise<Device> {
   const device = await db.query.devices.findFirst({
-    where: eq(devices.id, id),
+    where: and(eq(devices.id, id), eq(devices.isDeleted, false)),
   });
 
   if (!device) {
@@ -125,11 +153,35 @@ export async function getDeviceById(id: string): Promise<Device> {
   return device;
 }
 
+export async function checkSerialNumber(
+  serialNumber: string,
+  excludeId?: string
+): Promise<{ exists: boolean; deviceId: string | null; deviceName: string | null }> {
+  const conditions = [
+    eq(devices.serialNumber, serialNumber),
+    eq(devices.isDeleted, false),
+  ];
+  if (excludeId) {
+    conditions.push(sql`${devices.id} != ${excludeId}`);
+  }
+
+  const existing = await db.query.devices.findFirst({
+    where: and(...conditions),
+    columns: { id: true, name: true, model: true },
+  });
+
+  return {
+    exists: !!existing,
+    deviceId: existing?.name ?? null,   // "name" is the device identifier e.g. A001
+    deviceName: existing?.model ?? null,
+  };
+}
+
 export async function createDevice(input: CreateDeviceInput, userId: string): Promise<Device> {
   // Check for duplicate serial number
   if (input.serialNumber) {
     const existing = await db.query.devices.findFirst({
-      where: eq(devices.serialNumber, input.serialNumber),
+      where: and(eq(devices.serialNumber, input.serialNumber), eq(devices.isDeleted, false)),
     });
 
     if (existing) {
@@ -137,10 +189,15 @@ export async function createDevice(input: CreateDeviceInput, userId: string): Pr
     }
   }
 
+  // Auto-generate device name based on platform in metadata
+  const platform = (input.metadata?.platform as string) || '';
+  const generatedName = await generateDeviceName(platform);
+
   const [device] = await db
     .insert(devices)
     .values({
       ...input,
+      name: generatedName, // Override any client-provided name
       registeredBy: userId,
       lastUpdatedBy: userId,
     })
@@ -159,7 +216,7 @@ export async function updateDevice(
   // Check for duplicate serial number
   if (input.serialNumber && input.serialNumber !== before.serialNumber) {
     const existing = await db.query.devices.findFirst({
-      where: and(eq(devices.serialNumber, input.serialNumber), sql`${devices.id} != ${id}`),
+      where: and(eq(devices.serialNumber, input.serialNumber), sql`${devices.id} != ${id}`, eq(devices.isDeleted, false)),
     });
 
     if (existing) {
@@ -180,10 +237,29 @@ export async function updateDevice(
   return { before, after };
 }
 
-export async function deleteDevice(id: string): Promise<Device> {
+export async function deleteDevice(
+  id: string,
+  userId: string
+): Promise<Device> {
   const device = await getDeviceById(id);
 
-  await db.delete(devices).where(eq(devices.id, id));
+  await db
+    .update(devices)
+    .set({ isDeleted: true, updatedAt: new Date() })
+    .where(eq(devices.id, id));
+
+  await createAuditLog({
+    userId,
+    module: 'devices',
+    action: 'device_deleted',
+    entityType: 'device',
+    entityId: id,
+    entityName: device.name,
+    changes: {
+      before: { isDeleted: false },
+      after: { isDeleted: true },
+    },
+  });
 
   return device;
 }
@@ -222,6 +298,7 @@ export async function getDeviceStats(): Promise<DeviceStats> {
       count: sql<number>`count(*)::int`,
     })
     .from(devices)
+    .where(eq(devices.isDeleted, false))
     .groupBy(devices.status);
 
   const stats: DeviceStats = {
@@ -249,4 +326,68 @@ export async function getDeviceStats(): Promise<DeviceStats> {
   }
 
   return stats;
+}
+
+export async function getDistinctOsVersions(platform: 'iOS' | 'Android'): Promise<string[]> {
+  const results = await db
+    .selectDistinct({
+      osVersion: sql<string>`${devices.metadata}->>'osVersion'`,
+    })
+    .from(devices)
+    .where(
+      and(
+        sql`${devices.metadata}->>'platform' = ${platform}`,
+        sql`${devices.metadata}->>'osVersion' IS NOT NULL AND ${devices.metadata}->>'osVersion' != ''`,
+        eq(devices.isDeleted, false)
+      )
+    )
+    .orderBy(desc(sql`${devices.metadata}->>'osVersion'`));
+
+  return results.map((r) => r.osVersion).filter(Boolean);
+}
+
+export interface SuggestedDevice {
+  id: string;
+  name: string;
+  model: string | null;
+  platform: string | null;
+  osVersion: string | null;
+  status: string;
+}
+
+export async function suggestDevices(
+  platform: string,
+  osVersion?: string
+): Promise<SuggestedDevice[]> {
+  const conditions = [
+    eq(devices.status, 'active'),
+    eq(devices.isDeleted, false),
+    sql`${devices.metadata}->>'platform' = ${platform}`,
+  ];
+
+  // Add OS version compatibility filter if provided
+  if (osVersion) {
+    conditions.push(
+      sql`(${devices.metadata}->>'osVersion')::float >= ${parseFloat(osVersion)}`
+    );
+  }
+
+  const rows = await db
+    .select({
+      id: devices.id,
+      name: devices.name,
+      model: devices.model,
+      platform: sql<string | null>`${devices.metadata}->>'platform'`,
+      osVersion: sql<string | null>`${devices.metadata}->>'osVersion'`,
+      status: devices.status,
+    })
+    .from(devices)
+    .where(and(...conditions))
+    .orderBy(
+      // Exact match first, then ascending (13 → 14 → 15)
+      sql`(${devices.metadata}->>'osVersion')::float ASC NULLS LAST`,
+      asc(devices.name)
+    );
+
+  return rows;
 }

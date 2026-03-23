@@ -48,14 +48,14 @@ export async function sendInviteEmail(
   inviterName: string,
   role: string
 ): Promise<void> {
-  const inviteUrl = `${env.FRONTEND_URL}/invite/accept?token=${inviteToken}`;
+  const inviteUrl = `${env.FRONTEND_URL}/accept-invite/${inviteToken}`;
 
-  const subject = 'You have been invited to KnoxAdmin';
+  const subject = 'You have been invited to KnoxOps';
 
   const text = `
 Hello,
 
-${inviterName} has invited you to join KnoxAdmin as a ${role.replace('_', ' ')}.
+${inviterName} has invited you to join KnoxOps as a ${role.replace('_', ' ')}.
 
 To accept this invitation and set up your account, please visit:
 ${inviteUrl}
@@ -65,7 +65,7 @@ This invitation will expire in 7 days.
 If you did not expect this invitation, you can safely ignore this email.
 
 Best regards,
-KnoxAdmin Team
+KnoxOps Team
   `.trim();
 
   const html = `
@@ -79,7 +79,7 @@ KnoxAdmin Team
   <div style="background: #f8f9fa; border-radius: 8px; padding: 30px; margin-bottom: 20px;">
     <h1 style="margin: 0 0 20px; color: #1a1a1a; font-size: 24px;">You're Invited!</h1>
     <p style="margin: 0 0 15px;">
-      <strong>${inviterName}</strong> has invited you to join <strong>KnoxAdmin</strong> as a <strong>${role.replace('_', ' ')}</strong>.
+      <strong>${inviterName}</strong> has invited you to join <strong>KnoxOps</strong> as a <strong>${role.replace('_', ' ')}</strong>.
     </p>
     <p style="margin: 0 0 25px;">
       Click the button below to accept this invitation and set up your account:
@@ -108,12 +108,12 @@ export async function sendPasswordResetEmail(
 ): Promise<void> {
   const resetUrl = `${env.FRONTEND_URL}/reset-password?token=${resetToken}`;
 
-  const subject = 'Reset your KnoxAdmin password';
+  const subject = 'Reset your KnoxOps password';
 
   const text = `
 Hello ${userName},
 
-We received a request to reset your password for your KnoxAdmin account.
+We received a request to reset your password for your KnoxOps account.
 
 To reset your password, please visit:
 ${resetUrl}
@@ -123,7 +123,7 @@ This link will expire in 1 hour.
 If you did not request a password reset, please ignore this email or contact support if you have concerns.
 
 Best regards,
-KnoxAdmin Team
+KnoxOps Team
   `.trim();
 
   const html = `
@@ -140,7 +140,7 @@ KnoxAdmin Team
       Hello <strong>${userName}</strong>,
     </p>
     <p style="margin: 0 0 15px;">
-      We received a request to reset your password for your KnoxAdmin account.
+      We received a request to reset your password for your KnoxOps account.
     </p>
     <p style="margin: 0 0 25px;">
       Click the button below to reset your password:
@@ -160,4 +160,77 @@ KnoxAdmin Team
   `.trim();
 
   await sendEmail({ to: email, subject, text, html });
+}
+
+export async function sendReleaseEmail(options: {
+  toEmail: string;
+  clientName: string;
+  tagName: string;
+  releaseName: string;
+  releaseBody: string;
+  assetName: string;
+  downloadUrl: string;
+}): Promise<void> {
+  const subject = `New Release Available: ${options.tagName}`;
+
+  const releaseNotes = options.releaseBody.split('\n').slice(0, 5).join('\n');
+
+  const text = `
+Hello ${options.clientName},
+
+A new release is available: ${options.releaseName} (${options.tagName})
+
+Release Notes:
+${releaseNotes}
+
+To download ${options.assetName}, please visit:
+${options.downloadUrl}
+
+This download link will expire in 7 days.
+
+Best regards,
+KnoxOps Team
+  `.trim();
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="background: #f8f9fa; border-radius: 8px; padding: 30px; margin-bottom: 20px;">
+    <h2 style="margin: 0 0 10px; color: #1a1a1a; font-size: 20px;">📦 New Release Available</h2>
+    <p style="margin: 0 0 5px; font-size: 14px; color: #666;">For ${options.clientName}</p>
+
+    <div style="background: white; border-left: 4px solid #2563eb; padding: 15px; margin: 20px 0; border-radius: 4px;">
+      <p style="margin: 0 0 5px;"><strong style="font-size: 16px;">${options.releaseName}</strong></p>
+      <p style="margin: 0; font-size: 13px; color: #666;">${options.tagName}</p>
+    </div>
+
+    <div style="margin: 20px 0;">
+      <p style="margin: 0 0 10px; font-weight: 500; color: #333;">Release Notes:</p>
+      <pre style="margin: 0; background: #f0f0f0; padding: 10px; border-radius: 4px; font-size: 12px; overflow-x: auto; color: #555;">${options.releaseBody.split('\n').slice(0, 5).join('\n')}</pre>
+    </div>
+
+    <p style="margin: 20px 0 0;">
+      Click the button below to download <strong>${options.assetName}</strong>:
+    </p>
+    <a href="${options.downloadUrl}" style="display: inline-block; background: #2563eb; color: white; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 500; margin: 15px 0;">
+      Download ${options.assetName}
+    </a>
+
+    <p style="margin: 20px 0 0; font-size: 13px; color: #999;">
+      ⏱ This download link will expire in 7 days.
+    </p>
+  </div>
+  <p style="font-size: 11px; color: #999; text-align: center; margin: 20px 0 0;">
+    © KnoxOps. All rights reserved.
+  </p>
+</body>
+</html>
+  `.trim();
+
+  await sendEmail({ to: options.toEmail, subject, text, html });
 }
