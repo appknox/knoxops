@@ -7,6 +7,9 @@ export const deviceStatusEnum = pgEnum('device_status', [
   'inactive',
   'maintenance',
   'decommissioned',
+  'sold',
+  'for_sale',
+  'not_verified',
 ]);
 
 // Device type enum
