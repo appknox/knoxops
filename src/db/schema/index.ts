@@ -57,3 +57,7 @@ export type {
   LicenseRequestStatus,
   LicenseRequestType,
 } from './onprem.js';
+
+// App Settings
+export { appSettings } from './app-settings.js';
+export type { AppSetting, NewAppSetting } from './app-settings.js';

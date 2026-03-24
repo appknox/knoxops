@@ -1,7 +1,7 @@
 import { db } from '../../db/index.js';
 import { deviceRequests, users, devices, entityComments, DeviceRequest, DeviceRequestStatus } from '../../db/schema/index.js';
 import { eq, and, desc, isNull, inArray } from 'drizzle-orm';
-import { sendSlackNotification } from '../../services/slack-notification.service.js';
+import { sendDeviceSlackNotification as sendSlackNotification } from '../../services/slack-notification.service.js';
 import { createAuditLog } from '../../services/audit-log.service.js';
 import { User } from '../../db/schema/users.js';
 import { env } from '../../config/env.js';
@@ -16,6 +16,7 @@ export interface CreateDeviceRequestInput {
   osVersion?: string;
   purpose: string;
   requestingFor?: string;
+  additionalDetails?: string;
 }
 
 export interface LinkedDevice {
@@ -45,6 +46,7 @@ export async function createRequest(
       osVersion: input.osVersion?.trim() || null,
       purpose: input.purpose.trim(),
       requestingFor: input.requestingFor?.trim() || null,
+      additionalDetails: input.additionalDetails?.trim() || null,
       status: 'pending',
     })
     .returning();
@@ -66,8 +68,12 @@ export async function createRequest(
   const requestingForLine =
     requestingFor && requestingFor !== userName ? `Requesting for: ${requestingFor}\n` : '';
 
+  const additionalDetailsLine = input.additionalDetails?.trim()
+    ? `Additional Details: ${input.additionalDetails.trim()}\n`
+    : '';
+
   await sendSlackNotification(
-    `📋 New Device Request — ${date}\n\n*Request #:* ${request.requestNo}\nRequested by: ${userName} (${userEmail})\n${requestingForLine}Device: ${input.platform} ${input.deviceType}${input.osVersion ? ` · ${input.osVersion}` : ''}\nPurpose: ${input.purpose}\n\n<${requestUrl(request.id)}|View Request →>`
+    `📋 New Device Request — ${date}\n\n*Request #:* ${request.requestNo}\nRequested by: ${userName} (${userEmail})\n${requestingForLine}Device: ${input.platform} ${input.deviceType}${input.osVersion ? ` · ${input.osVersion}` : ''}\nPurpose: ${input.purpose}\n${additionalDetailsLine}\n<${requestUrl(request.id)}|View Request →>`
   );
 
   return {

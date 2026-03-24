@@ -22,6 +22,7 @@ export async function deviceRequestRoutes(app: FastifyInstance) {
             osVersion: { type: 'string', nullable: true },
             purpose: { type: 'string' },
             requestingFor: { type: 'string', maxLength: 255, nullable: true },
+            additionalDetails: { type: 'string', nullable: true },
           },
         },
         response: {
@@ -75,6 +76,7 @@ export async function deviceRequestRoutes(app: FastifyInstance) {
                     osVersion: { type: 'string', nullable: true },
                     purpose: { type: 'string' },
                     requestingFor: { type: 'string', nullable: true },
+                    additionalDetails: { type: 'string', nullable: true },
                     status: { type: 'string' },
                     rejectionReason: { type: 'string', nullable: true },
                     linkedDeviceId: { type: 'string', nullable: true },

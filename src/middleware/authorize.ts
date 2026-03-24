@@ -3,7 +3,7 @@ import { ForbiddenError } from './errorHandler.js';
 import { AppAbility } from '../lib/abilities.js';
 
 type Actions = 'manage' | 'create' | 'read' | 'update' | 'delete';
-type Subjects = 'Device' | 'OnPrem' | 'User' | 'AuditLog' | 'Invite' | 'all';
+type Subjects = 'Device' | 'OnPrem' | 'User' | 'AuditLog' | 'Invite' | 'Settings' | 'all';
 
 export function authorize(action: Actions, subject: Subjects) {
   return async (request: FastifyRequest, _reply: FastifyReply) => {

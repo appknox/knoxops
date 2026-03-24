@@ -19,6 +19,7 @@ import { onpremLicenseRequestsRoutes } from './modules/onprem-license-requests/o
 import { notificationsRoutes } from './modules/notifications/notifications.routes.js';
 import { auditLogRoutes } from './modules/audit-logs/audit-logs.routes.js';
 import { releasesRoutes } from './modules/releases/releases.routes.js';
+import { settingsRoutes } from './modules/settings/settings.routes.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -60,6 +61,7 @@ export async function buildApp() {
   await app.register(onpremLicenseRequestsRoutes, { prefix: '/api/onprem' });
   await app.register(auditLogRoutes, { prefix: '/api/audit-logs' });
   await app.register(notificationsRoutes, { prefix: '/api' });
+  await app.register(settingsRoutes, { prefix: '/api' });
   await app.register(releasesRoutes, { prefix: '/api/releases' });
 
   return app;

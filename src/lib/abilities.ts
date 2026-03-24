@@ -2,7 +2,7 @@ import { AbilityBuilder, createMongoAbility, MongoAbility } from '@casl/ability'
 import { Role } from '../db/schema/index.js';
 
 type Actions = 'manage' | 'create' | 'read' | 'update' | 'delete';
-type Subjects = 'Device' | 'OnPrem' | 'User' | 'AuditLog' | 'Invite' | 'all';
+type Subjects = 'Device' | 'OnPrem' | 'User' | 'AuditLog' | 'Invite' | 'Settings' | 'all';
 
 export type AppAbility = MongoAbility<[Actions, Subjects]>;
 

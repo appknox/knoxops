@@ -1,5 +1,6 @@
 import { IncomingWebhook } from '@slack/webhook';
 import { env } from '../config/env.js';
+import * as settingsService from '../modules/settings/settings.service.js';
 
 export type SlackCategory = 'patch' | 'info' | 'warning' | 'error';
 
@@ -20,19 +21,27 @@ const CATEGORY_HEADER: Record<SlackCategory, string> = {
 };
 
 export function getWebhook(): IncomingWebhook | null {
-  if (!env.SLACK_WEBHOOK_URL) {
+  // Read from settings with fallback to env
+  const url = settingsService.getSetting(settingsService.SETTING_KEYS.SLACK_ONPREM_WEBHOOK_URL) ||
+    env.SLACK_WEBHOOK_URL;
+
+  if (!url) {
     console.warn('SLACK_WEBHOOK_URL not configured. Skipping Slack notification.');
     return null;
   }
-  return new IncomingWebhook(env.SLACK_WEBHOOK_URL);
+  return new IncomingWebhook(url);
 }
 
 export function getDeviceWebhook(): IncomingWebhook | null {
-  if (!env.SLACK_DEVICE_WEBHOOK_URL) {
+  // Read from settings with fallback to env
+  const url = settingsService.getSetting(settingsService.SETTING_KEYS.SLACK_DEVICE_WEBHOOK_URL) ||
+    env.SLACK_DEVICE_WEBHOOK_URL;
+
+  if (!url) {
     console.warn('SLACK_DEVICE_WEBHOOK_URL not configured. Skipping device Slack notification.');
     return null;
   }
-  return new IncomingWebhook(env.SLACK_DEVICE_WEBHOOK_URL);
+  return new IncomingWebhook(url);
 }
 
 /**
@@ -66,6 +75,40 @@ export async function sendSlackNotification(
     console.log(`Slack [${category}] notification sent`);
   } catch (error) {
     console.error('Failed to send Slack notification:', error);
+    throw error;
+  }
+}
+
+/**
+ * Send a notification to the device webhook
+ */
+export async function sendDeviceSlackNotification(
+  message: string,
+  blocks?: any[],
+  category: SlackCategory = 'info'
+): Promise<void> {
+  const webhook = getDeviceWebhook();
+  if (!webhook) return;
+
+  const headerBlocks = [
+    {
+      type: 'header',
+      text: {
+        type: 'plain_text',
+        text: CATEGORY_HEADER[category],
+        emoji: true,
+      },
+    },
+  ];
+
+  try {
+    await webhook.send({
+      text: message,
+      blocks: blocks ? [...headerBlocks, ...blocks] : undefined,
+    });
+    console.log(`Slack Device [${category}] notification sent`);
+  } catch (error) {
+    console.error('Failed to send device Slack notification:', error);
     throw error;
   }
 }

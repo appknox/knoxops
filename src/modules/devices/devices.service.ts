@@ -366,12 +366,7 @@ export async function suggestDevices(
     sql`${devices.metadata}->>'platform' = ${platform}`,
   ];
 
-  // Add OS version compatibility filter if provided
-  if (osVersion) {
-    conditions.push(
-      sql`(${devices.metadata}->>'osVersion')::float >= ${parseFloat(osVersion)}`
-    );
-  }
+  const v = osVersion ? parseFloat(osVersion) : null;
 
   const rows = await db
     .select({
@@ -385,10 +380,24 @@ export async function suggestDevices(
     .from(devices)
     .where(and(...conditions))
     .orderBy(
-      // Exact match first, then ascending (13 → 14 → 15)
-      sql`(${devices.metadata}->>'osVersion')::float ASC NULLS LAST`,
+      // 0 = exact match, 1 = higher versions, 2 = lower versions
+      v !== null
+        ? sql`CASE
+            WHEN (${devices.metadata}->>'osVersion')::float = ${v} THEN 0
+            WHEN (${devices.metadata}->>'osVersion')::float > ${v}  THEN 1
+            ELSE 2
+          END ASC NULLS LAST`
+        : sql`(${devices.metadata}->>'osVersion')::float ASC NULLS LAST`,
+      // Within higher group: ascending (16→17→18). Within lower group: descending (15→14→13)
+      v !== null
+        ? sql`CASE
+            WHEN (${devices.metadata}->>'osVersion')::float >= ${v} THEN (${devices.metadata}->>'osVersion')::float
+            ELSE -(${devices.metadata}->>'osVersion')::float
+          END ASC NULLS LAST`
+        : sql`(${devices.metadata}->>'osVersion')::float ASC NULLS LAST`,
       asc(devices.name)
-    );
+    )
+    .limit(50);
 
   return rows;
 }
