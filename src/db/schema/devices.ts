@@ -3,8 +3,8 @@ import { users } from './users.js';
 
 // Device status enum
 export const deviceStatusEnum = pgEnum('device_status', [
-  'active',
-  'inactive',
+  'in_inventory',
+  'checked_out',
   'maintenance',
   'decommissioned',
   'sold',
@@ -30,7 +30,7 @@ export const devices = pgTable('devices', {
   name: varchar('name', { length: 255 }).notNull(),
   serialNumber: varchar('serial_number', { length: 100 }).unique(),
   type: deviceTypeEnum('type').notNull(),
-  status: deviceStatusEnum('status').notNull().default('active'),
+  status: deviceStatusEnum('status').notNull().default('in_inventory'),
   manufacturer: varchar('manufacturer', { length: 100 }),
   model: varchar('model', { length: 100 }),
   location: varchar('location', { length: 255 }),

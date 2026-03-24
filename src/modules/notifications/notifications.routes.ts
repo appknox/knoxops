@@ -3,6 +3,7 @@ import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 import { checkAndNotifyUpcomingPatches, getUpcomingPatches, sendDeploymentPatchReminder } from '../../services/patch-reminder.service.js';
 import { sendDeviceCheckinDigest, sendDeviceCheckinDigestForDate, getTodaysCheckins, getYesterdaysCheckins, sendDeviceCheckoutDigest, sendDeviceCheckoutDigestForDate, getTodaysCheckouts, getYesterdaysCheckouts } from '../../services/device-checkin.service.js';
+import { getSettingBool, SETTING_KEYS } from '../../modules/settings/settings.service.js';
 
 export async function notificationsRoutes(app: FastifyInstance) {
   // Manual trigger for patch reminders (admin only)
@@ -37,6 +38,10 @@ export async function notificationsRoutes(app: FastifyInstance) {
       },
     },
     async (request, reply) => {
+      const enabled = getSettingBool(SETTING_KEYS.PATCH_REMINDERS_ENABLED, true);
+      if (!enabled) {
+        return reply.send({ message: 'Patch reminders are disabled in settings', upcomingPatchesCount: 0 });
+      }
       try {
         const { deploymentIds } = (request.body ?? {}) as { deploymentIds?: string[] };
         await checkAndNotifyUpcomingPatches(deploymentIds);
@@ -196,6 +201,10 @@ export async function notificationsRoutes(app: FastifyInstance) {
       },
     },
     async (request, reply) => {
+      const enabled = getSettingBool(SETTING_KEYS.DEVICE_CHECKIN_DIGEST_ENABLED, true);
+      if (!enabled) {
+        return reply.send({ message: 'Device check-in digest is disabled in settings', deviceCount: 0 });
+      }
       try {
         const { useYesterday = false } = request.query as { useYesterday?: boolean };
         const targetDate = useYesterday ? new Date(new Date().getTime() - 86400000) : new Date(); // yesterday = today - 1 day
@@ -293,6 +302,10 @@ export async function notificationsRoutes(app: FastifyInstance) {
       },
     },
     async (request, reply) => {
+      const enabled = getSettingBool(SETTING_KEYS.DEVICE_CHECKOUT_DIGEST_ENABLED, true);
+      if (!enabled) {
+        return reply.send({ message: 'Device check-out digest is disabled in settings', deviceCount: 0 });
+      }
       try {
         const { useYesterday = false } = request.query as { useYesterday?: boolean };
         const targetDate = useYesterday ? new Date(new Date().getTime() - 86400000) : new Date(); // yesterday = today - 1 day

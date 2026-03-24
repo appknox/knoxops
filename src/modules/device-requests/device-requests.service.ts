@@ -365,7 +365,7 @@ export async function completeRequest(
       await tx
         .update(devices)
         .set({
-          status: 'inactive',
+          status: 'checked_out',
           purpose: request.purpose,
           ...(assignedTo && { assignedTo }),
           lastUpdatedBy: completerUserId,
@@ -383,8 +383,8 @@ export async function completeRequest(
           entityId: linkedDeviceId,
           entityName: currentDevice.name,
           changes: {
-            before: { status: 'active', assignedTo: currentDevice.assignedTo || null },
-            after: { status: 'inactive', assignedTo, purpose: request.purpose },
+            before: { status: 'in_inventory', assignedTo: currentDevice.assignedTo || null },
+            after: { status: 'checked_out', assignedTo, purpose: request.purpose },
           },
         });
       }
