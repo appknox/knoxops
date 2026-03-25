@@ -6,8 +6,8 @@ import { createAuditLog } from '../../services/audit-log.service.js';
 import { User } from '../../db/schema/users.js';
 import { env } from '../../config/env.js';
 
-const requestUrl = (id: string) =>
-  `${env.FRONTEND_URL}/devices?tab=requests&requestId=${id}`;
+const requestUrl = () =>
+  `${env.FRONTEND_URL}/devices/requests`;
 
 
 export interface CreateDeviceRequestInput {
@@ -73,7 +73,7 @@ export async function createRequest(
     : '';
 
   await sendSlackNotification(
-    `📋 New Device Request — ${date}\n\n*Request #:* ${request.requestNo}\nRequested by: ${userName} (${userEmail})\n${requestingForLine}Device: ${input.platform} ${input.deviceType}${input.osVersion ? ` · ${input.osVersion}` : ''}\nPurpose: ${input.purpose}\n${additionalDetailsLine}\n<${requestUrl(request.id)}|View Request →>`
+    `📋 New Device Request — ${date}\n\n*Request #:* ${request.requestNo}\nRequested by: ${userName} (${userEmail})\n${requestingForLine}Device: ${input.platform} ${input.deviceType}${input.osVersion ? ` · ${input.osVersion}` : ''}\nPurpose: ${input.purpose}\n${additionalDetailsLine}\n<${requestUrl()}|View Request →>`
   );
 
   return {
@@ -249,7 +249,7 @@ export async function approveRequest(id: string, approverUserId: string): Promis
   const approverName = approverUser ? `${approverUser.firstName} ${approverUser.lastName}` : 'Unknown User';
 
   await sendSlackNotification(
-    `✅ Device Request Approved — ${date}\n\n*Request #:* ${updated.requestNo}\nRequested by: ${requesterName} | Approved by: ${approverName}\nDevice: ${updated.platform} ${updated.deviceType}${updated.osVersion ? ` · ${updated.osVersion}` : ''}\nPurpose: ${updated.purpose}\n\n<${requestUrl(updated.id)}|View Request →>`
+    `✅ Device Request Approved — ${date}\n\n*Request #:* ${updated.requestNo}\nRequested by: ${requesterName} | Approved by: ${approverName}\nDevice: ${updated.platform} ${updated.deviceType}${updated.osVersion ? ` · ${updated.osVersion}` : ''}\nPurpose: ${updated.purpose}\n\n<${requestUrl()}|View Request →>`
   );
 
   return {
@@ -303,7 +303,7 @@ export async function rejectRequest(
   const rejecterName = rejecterUser ? `${rejecterUser.firstName} ${rejecterUser.lastName}` : 'Unknown User';
 
   await sendSlackNotification(
-    `❌ Device Request Rejected — ${date}\n\n*Request #:* ${updated.requestNo}\nRequested by: ${requesterName} | Rejected by: ${rejecterName}\nDevice: ${updated.platform} ${updated.deviceType}${updated.osVersion ? ` · ${updated.osVersion}` : ''}\nPurpose: ${updated.purpose}\nReason: ${reason}\n\n<${requestUrl(updated.id)}|View Request →>`
+    `❌ Device Request Rejected — ${date}\n\n*Request #:* ${updated.requestNo}\nRequested by: ${requesterName} | Rejected by: ${rejecterName}\nDevice: ${updated.platform} ${updated.deviceType}${updated.osVersion ? ` · ${updated.osVersion}` : ''}\nPurpose: ${updated.purpose}\nReason: ${reason}\n\n<${requestUrl()}|View Request →>`
   );
 
   return {
@@ -429,7 +429,7 @@ export async function completeRequest(
   const deviceInfo = linkedDevice ? `${linkedDevice.name} — ${linkedDevice.model || 'Unknown Model'}` : 'No device allocated';
 
   await sendSlackNotification(
-    `📦 Device Request Completed — ${date}\n\n*Request #:* ${updated.requestNo}\nRequested by: ${requesterName} | Completed by: ${completerName}\nDevice allocated: ${deviceInfo}\nPurpose: ${request.purpose}\n\n<${requestUrl(updated.id)}|View Request →>`
+    `📦 Device Request Completed — ${date}\n\n*Request #:* ${updated.requestNo}\nRequested by: ${requesterName} | Completed by: ${completerName}\nDevice allocated: ${deviceInfo}\nPurpose: ${request.purpose}\n\n<${requestUrl()}|View Request →>`
   );
 
   return {
