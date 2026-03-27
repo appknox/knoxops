@@ -13,6 +13,10 @@ export const createDeviceSchema = z.object({
   // Operational fields (direct columns)
   purpose: z.string().max(100).optional(),
   assignedTo: z.string().max(255).optional(),
+  // Device sale fields
+  condition: z.string().max(50).optional(),
+  conditionNotes: z.string().optional(),
+  askingPrice: z.number().optional(),
   // Technical specs in metadata (macAddress, cpuArch, rom, platform, colour, imei, simNumber, udid, modelNumber)
   metadata: z.record(z.unknown()).optional(),
 });

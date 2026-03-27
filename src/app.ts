@@ -20,6 +20,7 @@ import { notificationsRoutes } from './modules/notifications/notifications.route
 import { auditLogRoutes } from './modules/audit-logs/audit-logs.routes.js';
 import { releasesRoutes } from './modules/releases/releases.routes.js';
 import { settingsRoutes } from './modules/settings/settings.routes.js';
+import { publicRoutes } from './modules/public/public.routes.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -63,6 +64,7 @@ export async function buildApp() {
   await app.register(notificationsRoutes, { prefix: '/api' });
   await app.register(settingsRoutes, { prefix: '/api' });
   await app.register(releasesRoutes, { prefix: '/api/releases' });
+  await app.register(publicRoutes, { prefix: '/api/public' });
 
   return app;
 }

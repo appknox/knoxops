@@ -7,12 +7,14 @@ import { env } from '../../config/env.js';
 export const SETTING_KEYS = {
   SLACK_ONPREM_WEBHOOK_URL: 'slack_onprem_webhook_url',
   SLACK_DEVICE_WEBHOOK_URL: 'slack_device_webhook_url',
+  SLACK_SALE_WEBHOOK_URL: 'slack_sale_webhook_url',
   PATCH_REMINDER_DAYS_AHEAD: 'patch_reminder_days_ahead',
   PATCH_REMINDER_OVERDUE_DAYS: 'patch_reminder_overdue_days',
   NOTIFICATION_SCHEDULE_HOUR_UTC: 'notification_schedule_hour_utc',
   PATCH_REMINDERS_ENABLED: 'patch_reminders_enabled',
   DEVICE_CHECKIN_DIGEST_ENABLED: 'device_checkin_digest_enabled',
   DEVICE_CHECKOUT_DIGEST_ENABLED: 'device_checkout_digest_enabled',
+  DEVICE_SALE_ENABLED: 'device_sale_enabled',
 };
 
 // In-memory cache
@@ -143,6 +145,8 @@ export async function seedDefaultSettings(): Promise<void> {
       [SETTING_KEYS.PATCH_REMINDERS_ENABLED]: 'true',
       [SETTING_KEYS.DEVICE_CHECKIN_DIGEST_ENABLED]: 'true',
       [SETTING_KEYS.DEVICE_CHECKOUT_DIGEST_ENABLED]: 'true',
+      [SETTING_KEYS.DEVICE_SALE_ENABLED]: 'false',
+      [SETTING_KEYS.SLACK_SALE_WEBHOOK_URL]: '',
     };
 
     // Seed each default (ignore conflicts — settings already exist)
@@ -169,14 +173,24 @@ export async function seedDefaultSettings(): Promise<void> {
 /**
  * Test Slack webhook URL
  */
-export async function testSlackWebhook(channel: 'onprem' | 'device'): Promise<void> {
-  const { sendSlackNotification, sendDeviceSlackNotification } = await import('../../services/slack-notification.service.js');
+export async function testSlackWebhook(channel: 'onprem' | 'device' | 'sale'): Promise<void> {
+  const { sendSlackNotification, sendDeviceSlackNotification, sendSaleAnnouncement } = await import('../../services/slack-notification.service.js');
 
   const testMessage = `✅ Test notification from KnoxAdmin (${new Date().toISOString()})`;
 
   if (channel === 'onprem') {
     await sendSlackNotification(testMessage);
-  } else {
+  } else if (channel === 'device') {
     await sendDeviceSlackNotification(testMessage);
+  } else if (channel === 'sale') {
+    // For sale channel, send a test device sale announcement
+    const testDevices = [{
+      name: 'Test Device',
+      model: 'Test Model',
+      condition: 'Excellent',
+      conditionNotes: 'This is a test notification',
+      askingPrice: 10000,
+    }];
+    await sendSaleAnnouncement(testDevices, 'https://example.com/sale');
   }
 }

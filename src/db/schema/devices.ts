@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, timestamp, text, jsonb, pgEnum, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, text, jsonb, pgEnum, boolean, numeric } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 
 // Device status enum
@@ -38,6 +38,10 @@ export const devices = pgTable('devices', {
   // Operational fields (direct columns)
   purpose: varchar('purpose', { length: 100 }),
   assignedTo: varchar('assigned_to', { length: 255 }),
+  // Device sale fields
+  condition: varchar('condition', { length: 50 }),
+  conditionNotes: text('condition_notes'),
+  askingPrice: numeric('asking_price', { precision: 10, scale: 2 }),
   // Technical specs stored in metadata (includes macAddress, cpuArch, osVersion, platform, imei, imei2, udid, modelNumber, etc.)
   metadata: jsonb('metadata').$type<Record<string, unknown>>(),
   registeredBy: uuid('registered_by').references(() => users.id),

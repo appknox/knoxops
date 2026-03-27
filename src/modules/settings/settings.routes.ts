@@ -35,7 +35,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: [authenticate, authorize('manage', 'Settings')] },
     async (request, reply) => {
       const query = request.query as { channel?: string };
-      const channel = (query.channel || 'onprem') as 'onprem' | 'device';
+      const channel = (query.channel || 'onprem') as 'onprem' | 'device' | 'sale';
 
       try {
         await settingsService.testSlackWebhook(channel);

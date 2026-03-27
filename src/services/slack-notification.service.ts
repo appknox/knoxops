@@ -189,3 +189,74 @@ export async function sendPatchReminders(
     'patch'
   );
 }
+
+/**
+ * Get sale webhook (for device sale announcements)
+ */
+export function getSaleWebhook(): IncomingWebhook | null {
+  const url = settingsService.getSetting(settingsService.SETTING_KEYS.SLACK_SALE_WEBHOOK_URL);
+  if (!url) {
+    console.warn('SLACK_SALE_WEBHOOK_URL not configured. Skipping sale Slack notification.');
+    return null;
+  }
+  return new IncomingWebhook(url);
+}
+
+interface ForSaleDevice {
+  name: string;
+  model: string | null;
+  condition: string | null;
+  conditionNotes: string | null;
+  askingPrice: number | null;
+}
+
+/**
+ * Send device sale announcement to Slack
+ */
+export async function sendSaleAnnouncement(
+  devices: ForSaleDevice[],
+  salePageUrl: string
+): Promise<void> {
+  if (devices.length === 0) return;
+
+  const webhook = getSaleWebhook();
+  if (!webhook) return;
+
+  const frontendBase = salePageUrl.replace(/\/sale$/, '');
+  const isLocalhost = frontendBase.includes('localhost') || frontendBase.includes('127.0.0.1');
+  const imageUrl = `${frontendBase}/sale.png`;
+
+  const blocks: any[] = [
+    {
+      type: 'header',
+      text: {
+        type: 'plain_text',
+        text: '🛍️ Appknox Device Sale',
+        emoji: true,
+      },
+    },
+    ...(isLocalhost ? [] : [{
+      type: 'image',
+      image_url: imageUrl,
+      alt_text: 'Appknox Device Sale',
+    }]),
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `We're selling off some devices. Grab yours before they're gone! *<${salePageUrl}|click here>* to view the devices.`,
+      },
+    },
+  ];
+
+  try {
+    await webhook.send({
+      text: `Appknox Device Sale — ${devices.length} device(s) available`,
+      blocks,
+    });
+    console.log(`Slack sale announcement sent for ${devices.length} device(s)`);
+  } catch (error) {
+    console.error('Failed to send sale announcement:', error);
+    throw error;
+  }
+}
