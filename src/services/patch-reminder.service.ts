@@ -2,6 +2,7 @@ import { db } from '../db/index.js';
 import { onpremDeployments, users } from '../db/schema/index.js';
 import { and, isNotNull, gte, lte, eq } from 'drizzle-orm';
 import { sendPatchReminders } from './slack-notification.service.js';
+import * as settingsService from '../modules/settings/settings.service.js';
 
 interface UpcomingPatch {
   id: string;
@@ -83,13 +84,19 @@ export async function checkAndNotifyUpcomingPatches(deploymentIds?: string[]): P
   console.log('Checking for upcoming patch schedules...');
 
   try {
-    let allPatches = await getUpcomingPatches(10);
+    // Read daysAhead from settings (default: 10)
+    const daysAhead = settingsService.getSettingNumber(
+      settingsService.SETTING_KEYS.PATCH_REMINDER_DAYS_AHEAD,
+      10
+    );
+
+    let allPatches = await getUpcomingPatches(daysAhead);
     if (deploymentIds && deploymentIds.length > 0) {
       allPatches = allPatches.filter((p) => deploymentIds.includes(p.id));
     }
 
     if (allPatches.length === 0) {
-      console.log('No upcoming patches in the next 10 days.');
+      console.log(`No upcoming patches in the next ${daysAhead} days.`);
       return;
     }
 

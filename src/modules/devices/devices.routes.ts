@@ -19,6 +19,9 @@ const deviceSchema = {
     description: { type: 'string', nullable: true },
     purpose: { type: 'string', nullable: true },
     assignedTo: { type: 'string', nullable: true },
+    condition: { type: 'string', nullable: true },
+    conditionNotes: { type: 'string', nullable: true },
+    askingPrice: { type: 'number', nullable: true },
     metadata: { type: 'object', nullable: true, additionalProperties: true },
     registeredBy: { type: 'string', nullable: true },
     lastUpdatedBy: { type: 'string', nullable: true },
@@ -33,9 +36,11 @@ const deviceListItemSchema = {
   properties: {
     id: { type: 'string', format: 'uuid' },
     name: { type: 'string' },
+    type: { type: 'string' },
     status: { type: 'string' },
     model: { type: 'string', nullable: true },
     platform: { type: 'string', nullable: true },
+    osVersion: { type: 'string', nullable: true },
     purpose: { type: 'string', nullable: true },
     assignedTo: { type: 'string', nullable: true },
   },
@@ -116,7 +121,7 @@ export async function deviceRoutes(app: FastifyInstance) {
           type: 'object',
           properties: {
             page: { type: 'integer', minimum: 1, default: 1 },
-            limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+            limit: { type: 'integer', minimum: 1, maximum: 10000, default: 20 },
             search: { type: 'string' },
             type: {
               type: 'string',
@@ -124,7 +129,7 @@ export async function deviceRoutes(app: FastifyInstance) {
             },
             status: {
               type: 'string',
-              enum: ['active', 'inactive', 'maintenance', 'decommissioned'],
+              enum: ['in_inventory', 'checked_out', 'maintenance', 'decommissioned', 'for_sale', 'sold', 'not_verified'],
             },
             sortBy: {
               type: 'string',
@@ -133,6 +138,7 @@ export async function deviceRoutes(app: FastifyInstance) {
             },
             sortOrder: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
             platform: { type: 'string' },
+            osVersion: { type: 'string' },
             purpose: { type: 'string' },
             assignedTo: { type: 'string' },
           },
@@ -283,8 +289,8 @@ export async function deviceRoutes(app: FastifyInstance) {
             },
             status: {
               type: 'string',
-              enum: ['active', 'inactive', 'maintenance', 'decommissioned'],
-              default: 'active',
+              enum: ['in_inventory', 'checked_out', 'maintenance', 'decommissioned', 'for_sale', 'sold', 'not_verified'],
+              default: 'in_inventory',
             },
             manufacturer: { type: 'string', maxLength: 100 },
             model: { type: 'string', maxLength: 100 },
@@ -330,7 +336,7 @@ export async function deviceRoutes(app: FastifyInstance) {
             },
             status: {
               type: 'string',
-              enum: ['active', 'inactive', 'maintenance', 'decommissioned'],
+              enum: ['in_inventory', 'checked_out', 'maintenance', 'decommissioned', 'for_sale', 'sold', 'not_verified'],
             },
             manufacturer: { type: 'string', maxLength: 100 },
             model: { type: 'string', maxLength: 100 },
@@ -339,6 +345,9 @@ export async function deviceRoutes(app: FastifyInstance) {
             purpose: { type: 'string', maxLength: 100 },
             assignedTo: { type: 'string', maxLength: 255 },
             metadata: { type: 'object' },
+            condition: { type: 'string', maxLength: 50, nullable: true },
+            conditionNotes: { type: 'string', nullable: true },
+            askingPrice: { type: 'number', nullable: true },
           },
         },
         response: {

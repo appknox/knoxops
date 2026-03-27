@@ -35,6 +35,7 @@ export interface DeviceListItem {
   status: string;
   model: string | null;
   platform: string | null;
+  osVersion: string | null;
   purpose: string | null;
   assignedTo: string | null;
 }
@@ -50,7 +51,7 @@ export interface PaginatedDevices {
 }
 
 export async function listDevices(query: ListDevicesQuery): Promise<PaginatedDevices> {
-  const { page, limit, search, type, status, platform, purpose, assignedTo, sortBy, sortOrder } = query;
+  const { page, limit, search, type, status, platform, osVersion, purpose, assignedTo, sortBy, sortOrder } = query;
   const offset = (page - 1) * limit;
 
   const conditions = [];
@@ -90,6 +91,16 @@ export async function listDevices(query: ListDevicesQuery): Promise<PaginatedDev
     conditions.push(sql`${devices.metadata}->>'platform' = ${platform}`);
   }
 
+  if (osVersion) {
+    // Support comma-separated major versions (e.g. "17,16")
+    const versions = osVersion.split(',').map((v) => v.trim()).filter(Boolean);
+    if (versions.length === 1) {
+      conditions.push(sql`SPLIT_PART(${devices.metadata}->>'osVersion', '.', 1) = ${versions[0]}`);
+    } else {
+      conditions.push(or(...versions.map((v) => sql`SPLIT_PART(${devices.metadata}->>'osVersion', '.', 1) = ${v}`)));
+    }
+  }
+
   // Filter out soft-deleted records
   conditions.push(eq(devices.isDeleted, false));
 
@@ -115,6 +126,7 @@ export async function listDevices(query: ListDevicesQuery): Promise<PaginatedDev
         type: devices.type,
         model: devices.model,
         platform: sql<string | null>`${devices.metadata}->>'platform'`,
+        osVersion: sql<string | null>`${devices.metadata}->>'osVersion'`,
         purpose: devices.purpose,
         assignedTo: devices.assignedTo,
       })
@@ -311,7 +323,7 @@ export async function getDeviceStats(): Promise<DeviceStats> {
 
   for (const row of result) {
     switch (row.status) {
-      case 'active':
+      case 'in_inventory':
         stats.inInventory = row.count;
         break;
       case 'maintenance':
@@ -320,7 +332,7 @@ export async function getDeviceStats(): Promise<DeviceStats> {
       case 'decommissioned':
         stats.toBeSold = row.count;
         break;
-      case 'inactive':
+      case 'checked_out':
         stats.inactive = row.count;
         break;
     }
@@ -344,7 +356,16 @@ export async function getDistinctOsVersions(platform: 'iOS' | 'Android'): Promis
     )
     .orderBy(desc(sql`${devices.metadata}->>'osVersion'`));
 
-  return results.map((r) => r.osVersion).filter(Boolean);
+  // Round to major version and deduplicate (e.g. "17.5" -> "17", "16.4" -> "16")
+  const major = results
+    .map((r) => r.osVersion?.split('.')[0])
+    .filter((v): v is string => !!v && /^\d+$/.test(v));
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const v of major) {
+    if (!seen.has(v)) { seen.add(v); deduped.push(v); }
+  }
+  return deduped;
 }
 
 export interface SuggestedDevice {
@@ -361,17 +382,13 @@ export async function suggestDevices(
   osVersion?: string
 ): Promise<SuggestedDevice[]> {
   const conditions = [
-    eq(devices.status, 'active'),
+    eq(devices.status, 'in_inventory'),
     eq(devices.isDeleted, false),
     sql`${devices.metadata}->>'platform' = ${platform}`,
   ];
 
-  // Add OS version compatibility filter if provided
-  if (osVersion) {
-    conditions.push(
-      sql`(${devices.metadata}->>'osVersion')::float >= ${parseFloat(osVersion)}`
-    );
-  }
+  // Use major version (integer part) for comparison
+  const majorV = osVersion ? parseInt(osVersion.split('.')[0], 10) : null;
 
   const rows = await db
     .select({
@@ -385,10 +402,25 @@ export async function suggestDevices(
     .from(devices)
     .where(and(...conditions))
     .orderBy(
-      // Exact match first, then ascending (13 → 14 → 15)
-      sql`(${devices.metadata}->>'osVersion')::float ASC NULLS LAST`,
+      // 0 = exact major version, 1 = higher major, 2 = lower major
+      majorV !== null
+        ? sql`CASE
+            WHEN NULLIF(SPLIT_PART(${devices.metadata}->>'osVersion', '.', 1), '')::int = ${majorV} THEN 0
+            WHEN NULLIF(SPLIT_PART(${devices.metadata}->>'osVersion', '.', 1), '')::int > ${majorV} THEN 1
+            ELSE 2
+          END ASC NULLS LAST`
+        : sql`NULLIF(SPLIT_PART(${devices.metadata}->>'osVersion', '.', 1), '')::int ASC NULLS LAST`,
+      // Within exact/higher: ascending (16→17→18). Within lower: descending (15→14→13)
+      majorV !== null
+        ? sql`CASE
+            WHEN NULLIF(SPLIT_PART(${devices.metadata}->>'osVersion', '.', 1), '')::int >= ${majorV}
+              THEN NULLIF(SPLIT_PART(${devices.metadata}->>'osVersion', '.', 1), '')::int
+            ELSE -NULLIF(SPLIT_PART(${devices.metadata}->>'osVersion', '.', 1), '')::int
+          END ASC NULLS LAST`
+        : sql`NULLIF(SPLIT_PART(${devices.metadata}->>'osVersion', '.', 1), '')::int ASC NULLS LAST`,
       asc(devices.name)
-    );
+    )
+    .limit(50);
 
   return rows;
 }

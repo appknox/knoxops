@@ -3,6 +3,12 @@ import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 import { checkAndNotifyUpcomingPatches, getUpcomingPatches, sendDeploymentPatchReminder } from '../../services/patch-reminder.service.js';
 import { sendDeviceCheckinDigest, sendDeviceCheckinDigestForDate, getTodaysCheckins, getYesterdaysCheckins, sendDeviceCheckoutDigest, sendDeviceCheckoutDigestForDate, getTodaysCheckouts, getYesterdaysCheckouts } from '../../services/device-checkin.service.js';
+import { getSettingBool, SETTING_KEYS } from '../../modules/settings/settings.service.js';
+import { eq, and } from 'drizzle-orm';
+import { db } from '../../db/index.js';
+import { devices } from '../../db/schema/index.js';
+import { sendSaleAnnouncement, getSaleWebhook } from '../../services/slack-notification.service.js';
+import { env } from '../../config/env.js';
 
 export async function notificationsRoutes(app: FastifyInstance) {
   // Manual trigger for patch reminders (admin only)
@@ -37,6 +43,10 @@ export async function notificationsRoutes(app: FastifyInstance) {
       },
     },
     async (request, reply) => {
+      const enabled = getSettingBool(SETTING_KEYS.PATCH_REMINDERS_ENABLED, true);
+      if (!enabled) {
+        return reply.send({ message: 'Patch reminders are disabled in settings', upcomingPatchesCount: 0 });
+      }
       try {
         const { deploymentIds } = (request.body ?? {}) as { deploymentIds?: string[] };
         await checkAndNotifyUpcomingPatches(deploymentIds);
@@ -196,6 +206,10 @@ export async function notificationsRoutes(app: FastifyInstance) {
       },
     },
     async (request, reply) => {
+      const enabled = getSettingBool(SETTING_KEYS.DEVICE_CHECKIN_DIGEST_ENABLED, true);
+      if (!enabled) {
+        return reply.send({ message: 'Device check-in digest is disabled in settings', deviceCount: 0 });
+      }
       try {
         const { useYesterday = false } = request.query as { useYesterday?: boolean };
         const targetDate = useYesterday ? new Date(new Date().getTime() - 86400000) : new Date(); // yesterday = today - 1 day
@@ -293,6 +307,10 @@ export async function notificationsRoutes(app: FastifyInstance) {
       },
     },
     async (request, reply) => {
+      const enabled = getSettingBool(SETTING_KEYS.DEVICE_CHECKOUT_DIGEST_ENABLED, true);
+      if (!enabled) {
+        return reply.send({ message: 'Device check-out digest is disabled in settings', deviceCount: 0 });
+      }
       try {
         const { useYesterday = false } = request.query as { useYesterday?: boolean };
         const targetDate = useYesterday ? new Date(new Date().getTime() - 86400000) : new Date(); // yesterday = today - 1 day
@@ -353,6 +371,82 @@ export async function notificationsRoutes(app: FastifyInstance) {
         app.log.error('Error fetching check-out preview:', error);
         return reply.status(500).send({
           message: 'Failed to fetch check-out preview',
+        });
+      }
+    }
+  );
+
+  // Device sale announcement — trigger
+  app.post(
+    '/notifications/sale/trigger',
+    {
+      preHandler: [authenticate, authorize('manage', 'Device')],
+      schema: {
+        tags: ['Notifications'],
+        summary: 'Manually trigger device sale announcement',
+        description: 'Sends Slack notification for all devices marked for sale (admin only)',
+        security: [{ bearerAuth: [] }],
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              message: { type: 'string' },
+              deviceCount: { type: 'number' },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      // Check webhook is configured before doing anything
+      const webhook = getSaleWebhook();
+      if (!webhook) {
+        return reply.status(400).send({
+          message: 'Slack webhook for sale announcements is not configured. Please add it in Settings → Notifications.',
+        });
+      }
+
+      try {
+        // Fetch all active for_sale devices
+        const forSaleDevices = await db
+          .select({
+            name: devices.name,
+            model: devices.model,
+            condition: devices.condition,
+            conditionNotes: devices.conditionNotes,
+            askingPrice: devices.askingPrice,
+          })
+          .from(devices)
+          .where(and(eq(devices.status, 'for_sale'), eq(devices.isDeleted, false)));
+
+        if (forSaleDevices.length === 0) {
+          return reply.send({
+            message: 'No devices currently for sale',
+            deviceCount: 0,
+          });
+        }
+
+        // Convert numeric strings to numbers for askingPrice
+        const formattedDevices = forSaleDevices.map((device) => ({
+          name: device.name,
+          model: device.model,
+          condition: device.condition,
+          conditionNotes: device.conditionNotes,
+          askingPrice: device.askingPrice ? Number(device.askingPrice) : null,
+        }));
+
+        // Send Slack announcement
+        const salePageUrl = `${env.FRONTEND_URL}/sale`;
+        await sendSaleAnnouncement(formattedDevices, salePageUrl);
+
+        return reply.send({
+          message: 'Device sale announcement sent successfully',
+          deviceCount: forSaleDevices.length,
+        });
+      } catch (error) {
+        app.log.error('Error triggering sale announcement:', error);
+        return reply.status(500).send({
+          message: 'Failed to trigger sale announcement',
         });
       }
     }

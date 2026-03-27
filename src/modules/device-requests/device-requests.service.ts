@@ -1,13 +1,13 @@
 import { db } from '../../db/index.js';
 import { deviceRequests, users, devices, entityComments, DeviceRequest, DeviceRequestStatus } from '../../db/schema/index.js';
 import { eq, and, desc, isNull, inArray } from 'drizzle-orm';
-import { sendSlackNotification } from '../../services/slack-notification.service.js';
+import { sendDeviceSlackNotification as sendSlackNotification } from '../../services/slack-notification.service.js';
 import { createAuditLog } from '../../services/audit-log.service.js';
 import { User } from '../../db/schema/users.js';
 import { env } from '../../config/env.js';
 
-const requestUrl = (id: string) =>
-  `${env.FRONTEND_URL}/devices?tab=requests&requestId=${id}`;
+const requestUrl = () =>
+  `${env.FRONTEND_URL}/devices/requests`;
 
 
 export interface CreateDeviceRequestInput {
@@ -16,6 +16,7 @@ export interface CreateDeviceRequestInput {
   osVersion?: string;
   purpose: string;
   requestingFor?: string;
+  additionalDetails?: string;
 }
 
 export interface LinkedDevice {
@@ -45,6 +46,7 @@ export async function createRequest(
       osVersion: input.osVersion?.trim() || null,
       purpose: input.purpose.trim(),
       requestingFor: input.requestingFor?.trim() || null,
+      additionalDetails: input.additionalDetails?.trim() || null,
       status: 'pending',
     })
     .returning();
@@ -66,8 +68,12 @@ export async function createRequest(
   const requestingForLine =
     requestingFor && requestingFor !== userName ? `Requesting for: ${requestingFor}\n` : '';
 
+  const additionalDetailsLine = input.additionalDetails?.trim()
+    ? `Additional Details: ${input.additionalDetails.trim()}\n`
+    : '';
+
   await sendSlackNotification(
-    `📋 New Device Request — ${date}\n\n*Request #:* ${request.requestNo}\nRequested by: ${userName} (${userEmail})\n${requestingForLine}Device: ${input.platform} ${input.deviceType}${input.osVersion ? ` · ${input.osVersion}` : ''}\nPurpose: ${input.purpose}\n\n<${requestUrl(request.id)}|View Request →>`
+    `📋 New Device Request — ${date}\n\n*Request #:* ${request.requestNo}\nRequested by: ${userName} (${userEmail})\n${requestingForLine}Device: ${input.platform} ${input.deviceType}${input.osVersion ? ` · ${input.osVersion}` : ''}\nPurpose: ${input.purpose}\n${additionalDetailsLine}\n<${requestUrl()}|View Request →>`
   );
 
   return {
@@ -243,7 +249,7 @@ export async function approveRequest(id: string, approverUserId: string): Promis
   const approverName = approverUser ? `${approverUser.firstName} ${approverUser.lastName}` : 'Unknown User';
 
   await sendSlackNotification(
-    `✅ Device Request Approved — ${date}\n\n*Request #:* ${updated.requestNo}\nRequested by: ${requesterName} | Approved by: ${approverName}\nDevice: ${updated.platform} ${updated.deviceType}${updated.osVersion ? ` · ${updated.osVersion}` : ''}\nPurpose: ${updated.purpose}\n\n<${requestUrl(updated.id)}|View Request →>`
+    `✅ Device Request Approved — ${date}\n\n*Request #:* ${updated.requestNo}\nRequested by: ${requesterName} | Approved by: ${approverName}\nDevice: ${updated.platform} ${updated.deviceType}${updated.osVersion ? ` · ${updated.osVersion}` : ''}\nPurpose: ${updated.purpose}\n\n<${requestUrl()}|View Request →>`
   );
 
   return {
@@ -297,7 +303,7 @@ export async function rejectRequest(
   const rejecterName = rejecterUser ? `${rejecterUser.firstName} ${rejecterUser.lastName}` : 'Unknown User';
 
   await sendSlackNotification(
-    `❌ Device Request Rejected — ${date}\n\n*Request #:* ${updated.requestNo}\nRequested by: ${requesterName} | Rejected by: ${rejecterName}\nDevice: ${updated.platform} ${updated.deviceType}${updated.osVersion ? ` · ${updated.osVersion}` : ''}\nPurpose: ${updated.purpose}\nReason: ${reason}\n\n<${requestUrl(updated.id)}|View Request →>`
+    `❌ Device Request Rejected — ${date}\n\n*Request #:* ${updated.requestNo}\nRequested by: ${requesterName} | Rejected by: ${rejecterName}\nDevice: ${updated.platform} ${updated.deviceType}${updated.osVersion ? ` · ${updated.osVersion}` : ''}\nPurpose: ${updated.purpose}\nReason: ${reason}\n\n<${requestUrl()}|View Request →>`
   );
 
   return {
@@ -359,7 +365,7 @@ export async function completeRequest(
       await tx
         .update(devices)
         .set({
-          status: 'inactive',
+          status: 'checked_out',
           purpose: request.purpose,
           ...(assignedTo && { assignedTo }),
           lastUpdatedBy: completerUserId,
@@ -377,8 +383,8 @@ export async function completeRequest(
           entityId: linkedDeviceId,
           entityName: currentDevice.name,
           changes: {
-            before: { status: 'active', assignedTo: currentDevice.assignedTo || null },
-            after: { status: 'inactive', assignedTo, purpose: request.purpose },
+            before: { status: 'in_inventory', assignedTo: currentDevice.assignedTo || null },
+            after: { status: 'checked_out', assignedTo, purpose: request.purpose },
           },
         });
       }
@@ -423,7 +429,7 @@ export async function completeRequest(
   const deviceInfo = linkedDevice ? `${linkedDevice.name} — ${linkedDevice.model || 'Unknown Model'}` : 'No device allocated';
 
   await sendSlackNotification(
-    `📦 Device Request Completed — ${date}\n\n*Request #:* ${updated.requestNo}\nRequested by: ${requesterName} | Completed by: ${completerName}\nDevice allocated: ${deviceInfo}\nPurpose: ${request.purpose}\n\n<${requestUrl(updated.id)}|View Request →>`
+    `📦 Device Request Completed — ${date}\n\n*Request #:* ${updated.requestNo}\nRequested by: ${requesterName} | Completed by: ${completerName}\nDevice allocated: ${deviceInfo}\nPurpose: ${request.purpose}\n\n<${requestUrl()}|View Request →>`
   );
 
   return {
