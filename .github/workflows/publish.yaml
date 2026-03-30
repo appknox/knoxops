@@ -1,0 +1,66 @@
+name: Publish docker image
+
+on:
+  release:
+    types: [published]
+
+env:
+  GHCR_CONTAINER: ghcr.io/${{ github.repository }}
+  QUAY_CONTAINER: quay.io/${{ github.repository }}
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Docker Login to ghcr
+        uses: docker/login-action@v1.12.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker Login to quay
+        uses: docker/login-action@v1.12.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_GITHUB_ACTION_PUSH_USERNAME }}
+          password: ${{ secrets.QUAY_GITHUB_ACTION_PUSH_PASSWORD }}
+
+      - name: Get docker tag
+        run: echo "::set-output name=docker_tag::${{ github.ref_name }}"
+        id: docker_tag
+
+      - name: Download latest earthly
+        run: "sudo /bin/sh -c 'wget https://github.com/earthly/earthly/releases/download/v0.6.2/earthly-linux-amd64 -O /usr/local/bin/earthly && chmod +x /usr/local/bin/earthly'"
+
+      - name: Earthly version
+        run: earthly --version
+
+      - name: Run build and publish to ghcr
+        run: earthly --ci --push +publish --TAG=${{ steps.docker_tag.outputs.docker_tag }} --CONTAINER=${{ env.GHCR_CONTAINER }}
+
+      - name: Run build and publish to quay
+        run: earthly --ci --push +publish --TAG=${{ steps.docker_tag.outputs.docker_tag }} --CONTAINER=${{ env.QUAY_CONTAINER }}
+
+      - name: Slack notification
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          fields: repo,workflow
+          custom_payload: |
+            {
+              attachments: [{
+                color: '${{ job.status }}' === 'success' ? 'good' : '${{ job.status }}' === 'failure' ? 'danger' : 'warning',
+                text: `Docker image creation ${{ job.status }}: ${{ env.GHCR_CONTAINER }}:${{ steps.docker_tag.outputs.docker_tag }} and ${{ env.QUAY_CONTAINER }}:${{ steps.docker_tag.outputs.docker_tag }}`,
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

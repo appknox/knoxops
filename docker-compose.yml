@@ -18,5 +18,30 @@ services:
       timeout: 5s
       retries: 5
 
+  knoxops:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: knoxops
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://knoxadmin:knoxadmin@postgres:5432/knoxadmin
+      RUN_MIGRATIONS: "true"
+    ports:
+      - '3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  knoxops-client:
+    build:
+      context: ../knoxops-client
+      dockerfile: Dockerfile
+    container_name: knoxops-client
+    ports:
+      - '80:80'
+    depends_on:
+      - knoxops
+
 volumes:
   postgres_data:
