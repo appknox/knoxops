@@ -32,20 +32,44 @@ Internal admin portal for managing on-premise deployments, device inventory, and
 - PostgreSQL 16
 - pnpm / npm
 
-### Backend Setup
+### Running with Docker (recommended)
+
+The full stack (backend + frontend + postgres) runs via Docker Compose:
 
 ```bash
-cd knoxadmin
+cp .env.example .env   # fill in required vars
+docker-compose up
+```
+
+Services:
+| Service | URL |
+|---------|-----|
+| Frontend | http://localhost |
+| Backend API | http://localhost:3000 |
+| API Docs (Swagger) | http://localhost:3000/docs |
+| PostgreSQL | localhost:5432 |
+
+On first run, seed the default admin user:
+
+```bash
+docker-compose exec knoxops npx tsx src/db/seed.ts
+```
+
+### Local Development
+
+#### Backend
+
+```bash
 npm install
 cp .env.example .env   # fill in DATABASE_URL, JWT_SECRET, SLACK_* vars
 npm run db:migrate     # apply Drizzle migrations
 npm run dev            # starts on http://localhost:3000
 ```
 
-### Frontend Setup
+#### Frontend
 
 ```bash
-cd knoxadmin-client
+cd ../knoxops-client
 npm install
 npm run dev            # starts on http://localhost:5173 (proxies /api → :3000)
 ```
@@ -75,6 +99,96 @@ Place xlsx files in the project root before running:
 - `android-devices.xlsx`
 - `ios-devices.xlsx`
 - `cambinoix-devices.xlsx`
+
+---
+
+## Device Detection (USB)
+
+KnoxOps supports automatic device info detection when registering devices. The approach differs by platform:
+
+### Android — WebUSB (browser-native, no agent needed)
+
+Android detection runs entirely in the browser using the [WebUSB API](https://developer.mozilla.org/en-US/docs/Web/API/USB). No backend or local agent required.
+
+**Requirements:**
+- Chrome or Edge browser (Firefox/Safari do not support WebUSB)
+- Page served over HTTPS or `localhost`
+- USB Debugging enabled on the Android device
+
+**How it works:**
+1. Browser prompts to select the USB device via native Chrome dialog
+2. ADB handshake happens in the browser (device shows "Allow USB Debugging?" prompt)
+3. Browser runs `getprop` via ADB shell and parses device info
+4. Form fields are pre-filled — no data touches the backend
+
+> **Note:** If you see a "Unable to claim interface" error, your local ADB daemon is holding the USB connection. Run `adb kill-server` and try again.
+
+---
+
+### iOS — Local Agent
+
+iOS detection requires the **KnoxOps Agent** running on the same machine as the browser. This is because WebUSB does not support iOS devices (Apple restricts USB access).
+
+#### Starting the agent
+
+```bash
+# Install libimobiledevice (macOS)
+brew install libimobiledevice
+
+# Start the agent
+cd agent
+npm install
+npm start
+# Agent runs on http://localhost:7000
+```
+
+The wizard automatically detects whether the agent is running and shows setup instructions if it's offline.
+
+**How it works:**
+1. Browser calls `http://localhost:7000` (the local agent)
+2. Agent runs `idevice_id`, `idevicepair`, `ideviceinfo` via libimobiledevice
+3. Device info is returned to the browser and pre-fills the form
+
+**Agent endpoints:**
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /health` | Check if agent is running |
+| `POST /detect` | Find connected iOS device |
+| `POST /pair` | Trust/pair the device |
+| `POST /fetch` | Fetch full device info |
+
+---
+
+### Architecture summary
+
+```
+Browser (lab machine)
+  ├── Android  →  WebUSB (direct USB, no network)
+  └── iOS      →  localhost:7000 (local agent) → USB → iPhone
+
+Cloud K8s
+  ├── knoxops backend  (:3000)   — stores device data
+  └── knoxops-client   (:80)     — serves the frontend
+```
+
+---
+
+## CI/CD
+
+Docker images are published to GHCR and Quay on every GitHub release.
+
+| Image | Registry |
+|-------|----------|
+| `knoxops` | `ghcr.io/appknox/knoxops` / `quay.io/appknox/knoxops` |
+| `knoxops-client` | `ghcr.io/appknox/knoxops-client` / `quay.io/appknox/knoxops-client` |
+
+**Required GitHub secrets:**
+- `QUAY_GITHUB_ACTION_PUSH_USERNAME`
+- `QUAY_GITHUB_ACTION_PUSH_PASSWORD`
+- `SLACK_WEBHOOK_URL`
+
+A manual trigger workflow (`manual_ghcr.yaml`) is also available in GitHub Actions for publishing without a release.
 
 ---
 

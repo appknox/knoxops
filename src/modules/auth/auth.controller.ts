@@ -276,13 +276,13 @@ export async function oidcCallback(request: FastifyRequest, reply: FastifyReply)
     const { email } = await exchangeOidcCode(code);
     let user = await findUserByEmail(email);
 
-    if (!user) {
+    if (!user || user.status === 'pending') {
       // Check for pending invite — auto-accept on first SSO login
       const invite = await getPendingInviteByEmail(email);
       if (invite) {
         await acceptInviteViaSso(email);
-        user = await findUserByEmail(email); // now exists
-      } else {
+        user = await findUserByEmail(email);
+      } else if (!user) {
         throw new Error('No account found for this Google email. Contact your administrator.');
       }
     }

@@ -1,0 +1,17 @@
+{
+  "name": "knoxops-agent",
+  "version": "1.0.0",
+  "description": "KnoxOps local agent for iOS device detection via USB",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  }
+}
