@@ -14,6 +14,19 @@ app.use(cors({
   methods: ['GET', 'POST'],
 }));
 
+// Required for Chrome's Private Network Access policy:
+// allows HTTPS pages to reach http://localhost
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 async function run(cmd, args, timeoutMs = DEFAULT_TIMEOUT) {
