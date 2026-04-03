@@ -13,9 +13,8 @@ import { sendSlackNotification } from '../../services/slack-notification.service
 import { createAuditLog } from '../../services/audit-log.service.js';
 import { User } from '../../db/schema/users.js';
 import { env } from '../../config/env.js';
-import { promises as fs } from 'fs';
-import path from 'path';
 import jwt from 'jsonwebtoken';
+import { saveLicenseFile, getSignedUrl, deleteFileFromS3 } from '../../services/file.service.js';
 
 const requestUrl = (deploymentId: string, requestId: string) =>
   `${env.FRONTEND_URL}/onprem/${deploymentId}?tab=requests&requestId=${requestId}`;
@@ -322,14 +321,11 @@ export async function uploadLicenseFile(
     throw new Error(`Cannot upload file for request with status ${request.status}`);
   }
 
-  // Save file to filesystem
-  const uploadsDir = env.UPLOADS_DIR || 'uploads';
-  const fileDir = path.join(uploadsDir, 'license-files', deploymentId, requestId);
-  const filePath = path.join(fileDir, file.filename);
-  const relativePath = path.relative(uploadsDir, filePath);
+  // Use deploymentId as client ID for folder structure: onprem/{clientId}/
+  const clientId = deploymentId;
 
-  await fs.mkdir(fileDir, { recursive: true });
-  await fs.writeFile(filePath, file.data);
+  // Save file to S3
+  const { s3Key } = await saveLicenseFile(file, deploymentId, requestId, clientId);
 
   // Update request with file info and complete it
   const [updated] = await db
@@ -337,7 +333,7 @@ export async function uploadLicenseFile(
     .set({
       status: 'completed',
       fileName: file.filename,
-      filePath: relativePath,
+      filePath: s3Key, // Store S3 key
       fileSize: file.data.length,
       uploadedBy,
       uploadedAt: new Date(),
@@ -545,7 +541,7 @@ export function verifyDownloadToken(token: string): { requestId: string; userId:
 export async function downloadLicenseFile(
   requestId: string,
   token: string
-): Promise<{ filePath: string; fileName: string }> {
+): Promise<{ downloadUrl: string; fileName: string }> {
   // Verify token
   verifyDownloadToken(token);
 
@@ -562,11 +558,11 @@ export async function downloadLicenseFile(
     throw new Error('License file not found');
   }
 
-  const uploadsDir = env.UPLOADS_DIR || 'uploads';
-  const fullPath = path.join(uploadsDir, request.filePath);
+  // Generate signed URL for S3 file with proper filename
+  const signedUrl = await getSignedUrl(request.filePath, undefined, request.fileName);
 
   return {
-    filePath: fullPath,
+    downloadUrl: signedUrl,
     fileName: request.fileName,
   };
 }

@@ -26,9 +26,11 @@ import {
   deleteSslCertificateFile,
   saveDocumentFile,
   deleteDocumentFile,
+  deleteFileFromS3,
+  getS3FileStream,
 } from '../../services/file.service.js';
 import { parseExcelFile, ParsedExcelData } from '../../services/excel-parser.service.js';
-import fsp from 'fs/promises';
+import { getSignedUrl } from '../../services/file.service.js';
 
 export interface OnpremWithCsm extends OnpremDeployment {
   associatedCsm?: {
@@ -299,6 +301,20 @@ export async function deleteOnprem(
 ): Promise<OnpremDeployment> {
   const deployment = await getOnpremById(id);
 
+  // Delete associated S3 files
+  if (deployment.prerequisiteFileUrl) {
+    await deleteFileFromS3(deployment.prerequisiteFileUrl);
+  }
+  if (deployment.sslCertificateFileUrl) {
+    await deleteFileFromS3(deployment.sslCertificateFileUrl);
+  }
+
+  // Delete all documents
+  const docs = await getDocuments(id);
+  for (const doc of docs) {
+    await deleteFileFromS3(doc.fileUrl);
+  }
+
   await db
     .update(onpremDeployments)
     .set({ isDeleted: true, updatedAt: new Date() })
@@ -423,20 +439,23 @@ export async function uploadPrerequisiteFile(
   // Verify deployment exists
   const deployment = await getOnpremById(deploymentId);
 
+  // Use deploymentId as client ID for folder structure: onprem/{clientId}/
+  const clientId = deploymentId;
+
   // Delete old file if exists
   if (deployment.prerequisiteFileUrl) {
     await deletePrerequisiteFile(deployment.prerequisiteFileUrl);
   }
 
-  // Save new file
-  const { fileName, filePath } = await savePrerequisiteFile(file, deploymentId);
+  // Save new file to S3
+  const { fileName, s3Key, buffer } = await savePrerequisiteFile(file, deploymentId, clientId);
 
   // Parse Excel file
   let parsedData: ParsedExcelData | undefined;
   try {
-    const fullPath = getPrerequisiteFilePath(filePath);
-    const buffer = await fsp.readFile(fullPath);
-    parsedData = await parseExcelFile(buffer);
+    if (buffer) {
+      parsedData = await parseExcelFile(buffer);
+    }
   } catch (error) {
     console.error('Failed to parse Excel file:', error);
     // Continue even if parsing fails - file is already uploaded
@@ -447,32 +466,33 @@ export async function uploadPrerequisiteFile(
     .update(onpremDeployments)
     .set({
       prerequisiteFileName: fileName,
-      prerequisiteFileUrl: filePath,
+      prerequisiteFileUrl: s3Key,
       updatedAt: new Date(),
     })
     .where(eq(onpremDeployments.id, deploymentId));
 
   return {
     fileName,
-    fileUrl: filePath,
+    fileUrl: s3Key,
     parsedData, // Return parsed data to frontend
   };
 }
 
 export async function getPrerequisiteFile(
   deploymentId: string
-): Promise<{ filePath: string; fileName: string }> {
+): Promise<{ s3Key: string; fileName: string; signedUrl: string }> {
   const deployment = await getOnpremById(deploymentId);
 
   if (!deployment.prerequisiteFileUrl || !deployment.prerequisiteFileName) {
     throw new NotFoundError('Prerequisite file not found');
   }
 
-  const filePath = getPrerequisiteFilePath(deployment.prerequisiteFileUrl);
+  const signedUrl = await getSignedUrl(deployment.prerequisiteFileUrl, undefined, deployment.prerequisiteFileName);
 
   return {
-    filePath,
+    s3Key: deployment.prerequisiteFileUrl,
     fileName: deployment.prerequisiteFileName,
+    signedUrl,
   };
 }
 
@@ -483,43 +503,50 @@ export async function uploadSslCertificateFile(
   // Verify deployment exists
   const deployment = await getOnpremById(deploymentId);
 
+  // Use deploymentId as client ID for folder structure: onprem/{clientId}/
+  const clientId = deploymentId;
+
   // Delete old file if exists
   if (deployment.sslCertificateFileUrl) {
     await deleteSslCertificateFile(deployment.sslCertificateFileUrl);
   }
 
   // Save new file with generic name: {deploymentId}-ssl-certs.zip
-  const { fileName, filePath } = await saveSslCertificateFile(file, deploymentId);
+  const { fileName, s3Key } = await saveSslCertificateFile(file, deploymentId, clientId);
 
   // Update deployment with file info
   await db
     .update(onpremDeployments)
     .set({
-      sslCertificateFileUrl: filePath,
+      sslCertificateFileUrl: s3Key,
       updatedAt: new Date(),
     })
     .where(eq(onpremDeployments.id, deploymentId));
 
   return {
     fileName,
-    fileUrl: filePath,
+    fileUrl: s3Key,
   };
 }
 
 export async function getSslCertificateFile(
   deploymentId: string
-): Promise<{ filePath: string; fileName: string }> {
+): Promise<{ s3Key: string; fileName: string; signedUrl: string }> {
   const deployment = await getOnpremById(deploymentId);
 
   if (!deployment.sslCertificateFileUrl) {
     throw new NotFoundError('SSL certificate file not found');
   }
 
-  const filePath = getSslCertificateFilePath(deployment.sslCertificateFileUrl);
+  // Extract filename from S3 key
+  const fileName = deployment.sslCertificateFileUrl.split('/').pop() || 'ssl-certificate';
+
+  const signedUrl = await getSignedUrl(deployment.sslCertificateFileUrl, undefined, fileName);
 
   return {
-    filePath,
-    fileName: deployment.sslCertificateFileUrl, // Use the stored filename
+    s3Key: deployment.sslCertificateFileUrl,
+    fileName,
+    signedUrl,
   };
 }
 
@@ -808,14 +835,20 @@ export async function uploadDocument(
   category: DocumentCategory,
   file: MultipartFile
 ): Promise<OnpremDocument> {
-  const { fileName, fileUrl, mimeType, fileSize } = await saveDocumentFile(deploymentId, category, file);
+  // Verify deployment exists
+  await getOnpremById(deploymentId);
+
+  // Use deploymentId as client ID for folder structure: onprem/{clientId}/
+  const clientId = deploymentId;
+
+  const { fileName, s3Key, mimeType, fileSize } = await saveDocumentFile(deploymentId, category, file, clientId);
   const [doc] = await db
     .insert(onpremDocuments)
     .values({
       deploymentId,
       category,
       fileName,
-      fileUrl,
+      fileUrl: s3Key, // Store S3 key
       mimeType,
       fileSize,
     })
@@ -847,6 +880,21 @@ export async function deleteDocument(documentId: string): Promise<void> {
 }
 
 /**
+ * Get signed URL for document download
+ */
+export async function getDocumentFile(documentId: string): Promise<{ signedUrl: string; fileName: string }> {
+  const docs = await db.select().from(onpremDocuments).where(eq(onpremDocuments.id, documentId));
+  const doc = docs[0];
+  if (!doc) throw new NotFoundError('Document not found');
+
+  const signedUrl = await getSignedUrl(doc.fileUrl, undefined, doc.fileName);
+  return {
+    signedUrl,
+    fileName: doc.fileName,
+  };
+}
+
+/**
  * Build a ZIP buffer containing ALL files for a deployment
  */
 export async function buildDeploymentZip(deploymentId: string): Promise<Buffer> {
@@ -858,34 +906,39 @@ export async function buildDeploymentZip(deploymentId: string): Promise<Buffer> 
   const { default: archiver } = await import('archiver');
   const archive = archiver('zip', { zlib: { level: 6 } });
 
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     const chunks: Buffer[] = [];
 
     archive.on('data', (chunk: Buffer) => chunks.push(chunk));
     archive.on('end', () => resolve(Buffer.concat(chunks)));
     archive.on('error', reject);
 
-    // Add prerequisite file
-    if (deployment.prerequisiteFileUrl) {
-      const prerequisitePath = getPrerequisiteFilePath(deployment.prerequisiteFileUrl);
-      archive.file(prerequisitePath, {
-        name: `prerequisite/${deployment.prerequisiteFileName ?? 'prerequisite'}`,
-      });
-    }
+    try {
+      // Add prerequisite file from S3
+      if (deployment.prerequisiteFileUrl) {
+        const stream = await getS3FileStream(deployment.prerequisiteFileUrl);
+        archive.append(stream, {
+          name: `prerequisite/${deployment.prerequisiteFileName ?? 'prerequisite'}`,
+        });
+      }
 
-    // Add SSL certificate
-    if (deployment.sslCertificateFileUrl) {
-      const sslPath = getSslCertificateFilePath(deployment.sslCertificateFileUrl);
-      const sslName = deployment.sslCertificateFileUrl.split('/').pop() || 'ssl-certificate';
-      archive.file(sslPath, { name: `ssl-certificate/${sslName}` });
-    }
+      // Add SSL certificate from S3
+      if (deployment.sslCertificateFileUrl) {
+        const stream = await getS3FileStream(deployment.sslCertificateFileUrl);
+        const sslName = deployment.sslCertificateFileUrl.split('/').pop() || 'ssl-certificate';
+        archive.append(stream, { name: `ssl-certificate/${sslName}` });
+      }
 
-    // Add uploaded documents
-    for (const doc of docs) {
-      archive.file(doc.fileUrl, { name: `documents/${doc.fileName}` });
-    }
+      // Add uploaded documents from S3
+      for (const doc of docs) {
+        const stream = await getS3FileStream(doc.fileUrl);
+        archive.append(stream, { name: `documents/${doc.fileName}` });
+      }
 
-    archive.finalize();
+      archive.finalize();
+    } catch (error) {
+      reject(error);
+    }
   });
 }
 

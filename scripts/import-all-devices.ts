@@ -42,20 +42,20 @@ function resolveStatus(
   if (ps === 'for sale') return 'for_sale';
   if (ps === 'out for repair') return 'maintenance';
   if (ps === 'dead' || ps === 'outdated') return 'decommissioned';
-  if (ps === 'testing') return 'active';
+  if (ps === 'testing') return 'in_inventory';
   if (ps === 'unknown') return 'not_verified';
 
   // Inventory Status column
   const inv = inventoryStatus.trim().toLowerCase();
-  if (inv === 'in inventory box') return 'active';
+  if (inv === 'in inventory box') return 'in_inventory';
   if (inv === 'not verified') return 'not_verified';
-  if (inv === 'checked out of inventory') return 'inactive';
+  if (inv === 'checked out of inventory') return 'checked_out';
   if (inv === 'checked out for repair') return 'maintenance';
   if (inv === 'removed from inventory') return 'decommissioned';
   if (inv === 'to be sold') return 'for_sale';
-  if (inv === 'security team') return 'active';
+  if (inv === 'security team') return 'in_inventory';
 
-  return extra?.defaultStatus ?? 'active';
+  return extra?.defaultStatus ?? 'in_inventory';
 }
 
 function resolvePurpose(purposeStatus: string): string | null {
@@ -507,7 +507,7 @@ async function importCambrionix(): Promise<{ devices: number; comments: number; 
         label: base,
         serial,
         type: 'charging_hub',
-        status: 'inactive',
+        status: 'in_inventory',
         manufacturer: platform === 'Anker' ? 'Anker' : 'Cambrionix',
         model,
         purpose: 'onPrem',

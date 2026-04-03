@@ -12,7 +12,6 @@ import {
 } from './onprem-license-requests.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
-import { promises as fs, createReadStream } from 'fs';
 
 export async function onpremLicenseRequestsRoutes(app: FastifyInstance) {
   // POST /onprem/:deploymentId/license-requests - Create license request
@@ -376,21 +375,12 @@ export async function onpremLicenseRequestsRoutes(app: FastifyInstance) {
       }
 
       try {
-        const { filePath, fileName } = await downloadLicenseFile(id, token);
+        const { downloadUrl, fileName } = await downloadLicenseFile(id, token);
 
-        // Check if file exists
-        try {
-          await fs.access(filePath);
-        } catch {
-          return reply.code(404).send({ error: 'License file not found' });
-        }
-
-        // Stream file download
-        reply.header('Content-Disposition', `attachment; filename="${fileName}"`);
-        reply.header('Content-Type', 'application/octet-stream');
-
-        const fileStream = createReadStream(filePath);
-        return reply.send(fileStream);
+        return reply.send({
+          downloadUrl,
+          fileName,
+        });
       } catch (error: any) {
         return reply.code(401).send({ error: error.message });
       }

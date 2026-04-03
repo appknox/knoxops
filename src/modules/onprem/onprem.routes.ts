@@ -24,6 +24,7 @@ import {
   uploadDocuments,
   listDocuments,
   removeDocument,
+  downloadDocument,
   downloadAll,
   recordPatch,
   searchClients,
@@ -613,8 +614,11 @@ export async function onpremRoutes(app: FastifyInstance) {
         },
         response: {
           200: {
-            type: 'string',
-            description: 'File content',
+            type: 'object',
+            properties: {
+              downloadUrl: { type: 'string' },
+              fileName: { type: 'string' },
+            },
           },
         },
       },
@@ -670,8 +674,11 @@ export async function onpremRoutes(app: FastifyInstance) {
         },
         response: {
           200: {
-            type: 'string',
-            description: 'ZIP file content',
+            type: 'object',
+            properties: {
+              downloadUrl: { type: 'string' },
+              fileName: { type: 'string' },
+            },
           },
         },
       },
@@ -1091,6 +1098,37 @@ export async function onpremRoutes(app: FastifyInstance) {
       },
     },
     removeDocument
+  );
+
+  // Download document route
+  app.get(
+    '/:id/documents/:docId/download',
+    {
+      preHandler: [authenticate, authorize('read', 'OnPrem')],
+      schema: {
+        tags: ['On-prem'],
+        summary: 'Download a document with signed URL',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id', 'docId'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            docId: { type: 'string', format: 'uuid' },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              downloadUrl: { type: 'string' },
+              fileName: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    downloadDocument
   );
 
   // Download all files as ZIP route

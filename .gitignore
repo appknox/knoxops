@@ -32,3 +32,8 @@ IMPLEMENTATION_PLAN.md
 
 # Drizzle
 uploads/
+
+# Development utilities (local only)
+check-env.js
+test-s3.mjs
+
