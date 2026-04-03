@@ -4,7 +4,7 @@ import { execFile as execFileCallback } from 'child_process';
 import { promisify } from 'util';
 
 const execFile = promisify(execFileCallback);
-const PORT = process.env.PORT || 7000;
+const PORT = process.env.PORT || 17392;
 const DEFAULT_TIMEOUT = 10_000;
 
 const app = express();

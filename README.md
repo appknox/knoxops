@@ -139,13 +139,13 @@ brew install libimobiledevice
 cd agent
 npm install
 npm start
-# Agent runs on http://localhost:7000
+# Agent runs on http://localhost:17392
 ```
 
 The wizard automatically detects whether the agent is running and shows setup instructions if it's offline.
 
 **How it works:**
-1. Browser calls `http://localhost:7000` (the local agent)
+1. Browser calls `http://localhost:17392` (the local agent)
 2. Agent runs `idevice_id`, `idevicepair`, `ideviceinfo` via libimobiledevice
 3. Device info is returned to the browser and pre-fills the form
 
@@ -165,7 +165,7 @@ The wizard automatically detects whether the agent is running and shows setup in
 ```
 Browser (lab machine)
   ├── Android  →  WebUSB (direct USB, no network)
-  └── iOS      →  localhost:7000 (local agent) → USB → iPhone
+  └── iOS      →  localhost:17392 (local agent) → USB → iPhone
 
 Cloud K8s
   ├── knoxops backend  (:3000)   — stores device data

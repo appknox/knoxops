@@ -1,5 +1,4 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
-import fs from 'fs';
 import {
   createOnpremSchema,
   updateOnpremSchema,
@@ -38,6 +37,7 @@ import {
   uploadDocument,
   getDocuments,
   deleteDocument,
+  getDocumentFile,
   buildDeploymentZip,
   recordPatchDeployment,
   searchClients as searchClientsService,
@@ -209,15 +209,18 @@ export async function downloadPrerequisite(
   request: FastifyRequest<{ Params: { id: string } }>,
   reply: FastifyReply
 ) {
-  const { id } = request.params;
-  const { filePath, fileName } = await getPrerequisiteFile(id);
+  try {
+    const { id } = request.params;
+    const { signedUrl, fileName } = await getPrerequisiteFile(id);
 
-  const stream = fs.createReadStream(filePath);
-
-  return reply
-    .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    .header('Content-Disposition', `attachment; filename="${fileName}"`)
-    .send(stream);
+    return reply.send({
+      downloadUrl: signedUrl,
+      fileName: fileName,
+    });
+  } catch (error) {
+    console.error('Download prerequisite error:', error);
+    throw error;
+  }
 }
 
 export async function checkEmail(
@@ -271,23 +274,18 @@ export async function downloadSslCertificate(
   request: FastifyRequest<{ Params: { id: string } }>,
   reply: FastifyReply
 ) {
-  const { id } = request.params;
-  const { filePath, fileName } = await getSslCertificateFile(id);
+  try {
+    const { id } = request.params;
+    const { signedUrl, fileName } = await getSslCertificateFile(id);
 
-  const stream = fs.createReadStream(filePath);
-
-  // Determine MIME type based on file extension
-  let mimeType = 'application/zip';
-  if (fileName.endsWith('.tar.gz') || fileName.endsWith('.tgz')) {
-    mimeType = 'application/x-compressed-tar';
-  } else if (fileName.endsWith('.gz')) {
-    mimeType = 'application/gzip';
+    return reply.send({
+      downloadUrl: signedUrl,
+      fileName,
+    });
+  } catch (error) {
+    console.error('Download SSL certificate error:', error);
+    throw error;
   }
-
-  return reply
-    .type(mimeType)
-    .header('Content-Disposition', `attachment; filename="${fileName}"`)
-    .send(stream);
 }
 
 // ============================================
@@ -421,6 +419,24 @@ export async function removeDocument(
   const { docId } = request.params;
   await deleteDocument(docId);
   return reply.send({ message: 'Document deleted' });
+}
+
+export async function downloadDocument(
+  request: FastifyRequest<{ Params: { id: string; docId: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const { docId } = request.params;
+    const { signedUrl, fileName } = await getDocumentFile(docId);
+
+    return reply.send({
+      downloadUrl: signedUrl,
+      fileName,
+    });
+  } catch (error) {
+    console.error('Download document error:', error);
+    throw error;
+  }
 }
 
 export async function downloadAll(
