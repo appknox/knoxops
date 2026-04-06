@@ -67,7 +67,7 @@ jobs:
         run: npm ci
 
       - name: Run migrations against test DB
-        run: DATABASE_URL=postgres://admin:admin123@localhost:5432/knoxadmin_test npm run db:migrate
+        run: npm run db:migrate
 
       - name: Run tests
         run: npm run test:run
