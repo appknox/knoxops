@@ -58,7 +58,7 @@ vi.mock('../src/services/file.service.js', () => ({
 }));
 import { users, refreshTokens, auditLogs, onpremDeployments, onpremStatusHistory, devices, deviceRequests, onpremLicenseRequests, entityComments } from '../src/db/schema/index.js';
 import { hashPassword } from '../src/lib/password.js';
-import { eq, like, sql } from 'drizzle-orm';
+import { eq, like, sql, inArray } from 'drizzle-orm';
 import type { CreateOnpremInput } from '../src/modules/onprem/onprem.schema.js';
 
 let app: FastifyInstance;
@@ -101,7 +101,7 @@ export async function createTestUser(
     email: string;
     firstName: string;
     lastName: string;
-    role: 'admin' | 'devices_admin' | 'devices_viewer' | 'onprem_admin' | 'onprem_viewer' | 'full_viewer' | 'full_editor';
+    role: 'admin' | 'devices_admin' | 'devices_viewer' | 'onprem_admin' | 'onprem_viewer' | 'full_viewer' | 'full_editor' | 'devices_admin_onprem_viewer' | 'onprem_admin_devices_viewer';
     password: string;
   },
   inviteStatus: 'accepted' | 'pending' = 'accepted'
@@ -200,11 +200,14 @@ export async function createTestDevice(
 ) {
   const defaultData = {
     type: data.type || 'mobile',
-    platform: data.platform || 'ios',
     serialNumber: data.serialNumber || `SN-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     manufacturer: data.manufacturer || 'Apple',
     model: data.model || 'iPhone 15',
-    osVersion: data.osVersion || '17.3',
+    ...(data.status ? { status: data.status } : {}),
+    metadata: {
+      platform: data.platform || 'ios',
+      osVersion: data.osVersion || '17.3',
+    },
   };
 
   const response = await app.inject({
@@ -286,102 +289,82 @@ export async function createTestLicenseRequest(
   return response;
 }
 
-// Cleanup test devices
-export async function cleanupTestDevices() {
-  try {
-    // Delete all devices (test DB only, so this is safe)
-    await db.delete(devices).where(sql`1=1`);
-  } catch (error) {
-    // Ignore FK errors
-    console.error('Device cleanup error (non-fatal):', error);
-  }
-}
-
-// Cleanup device requests
-export async function cleanupDeviceRequests() {
-  await db.delete(deviceRequests).where(sql`1=1`);
-}
-
-// Cleanup license requests
-export async function cleanupLicenseRequests() {
-  await db.delete(onpremLicenseRequests).where(sql`1=1`);
-}
-
-// Cleanup onprem test data
-export async function cleanupOnpremDeployments() {
-  try {
-    // Delete all onprem documents first
-    // (Assuming there's an onpremDocuments table - add if it exists)
-    // await db.delete(onpremDocuments).where(sql`1=1`);
-  } catch (error) {
-    // Ignore if table doesn't exist
-  }
-
-  try {
-    // Delete all status history
-    await db.delete(onpremStatusHistory).where(sql`1=1`);
-  } catch (error) {
-    // Ignore if table is empty or doesn't exist
-  }
-
-  try {
-    // Delete all onprem deployments (test DB only, so safe)
-    await db.delete(onpremDeployments).where(sql`1=1`);
-  } catch (error) {
-    console.error('OnPrem cleanup error (non-fatal):', error);
-  }
-}
-
 export async function cleanupTestData() {
-  // Clean up in order to avoid foreign key issues
-  // Dependencies: entityComments -> users, devices -> users, etc.
+  // Find all test user IDs first — everything is scoped to these
+  // This ensures we NEVER delete real data even if pointing at wrong DB
+  const testUsersList = await db.query.users.findMany({
+    where: like(users.email, '%@test.com'),
+  });
+  const testUserIds = testUsersList.map((u) => u.id);
 
-  // Step 1: Delete all comments (may have FK to users)
+  if (testUserIds.length === 0) return; // Nothing to clean up
+
+  // Step 1: Delete comments created by test users
   try {
-    await db.delete(entityComments).where(sql`1=1`);
+    await db.delete(entityComments).where(inArray(entityComments.createdBy, testUserIds));
   } catch (error) {
     console.error('Comment cleanup error (non-fatal):', error);
   }
 
-  // Step 2: Delete license requests
-  await cleanupLicenseRequests();
-
-  // Step 3: Delete device requests (may have FK to users)
-  await cleanupDeviceRequests();
-
-  // Step 4: Delete all devices (may have registered_by FK to users)
-  await cleanupTestDevices();
-
-  // Step 5: Delete onprem deployments (may have associated_csm_id FK to users)
-  await cleanupOnpremDeployments();
-
-  // Step 6: Delete audit logs and refresh tokens for test users
+  // Step 2: Delete license requests belonging to onprem deployments created by test users
   try {
-    const testUsersList = await db.query.users.findMany({
-      where: like(users.email, '%@test.com'),
+    const testDeployments = await db.query.onpremDeployments.findMany({
+      where: inArray(onpremDeployments.associatedCsmId, testUserIds),
+      columns: { id: true },
     });
-
-    for (const user of testUsersList) {
-      try {
-        await db.delete(auditLogs).where(eq(auditLogs.userId, user.id));
-      } catch (e) {
-        // Ignore
-      }
-      try {
-        await db.delete(refreshTokens).where(eq(refreshTokens.userId, user.id));
-      } catch (e) {
-        // Ignore
-      }
+    const deploymentIds = testDeployments.map((d) => d.id);
+    if (deploymentIds.length > 0) {
+      await db.delete(onpremLicenseRequests).where(inArray(onpremLicenseRequests.deploymentId, deploymentIds));
     }
   } catch (error) {
-    // Ignore if users don't exist
+    console.error('License request cleanup error (non-fatal):', error);
   }
 
-  // Step 7: Delete all test users (last, after all FK dependencies)
+  // Step 3: Delete device requests created by test users
+  try {
+    await db.delete(deviceRequests).where(inArray(deviceRequests.requestedBy, testUserIds));
+  } catch (error) {
+    console.error('Device request cleanup error (non-fatal):', error);
+  }
+
+  // Step 4: Delete devices registered by test users
+  try {
+    await db.delete(devices).where(inArray(devices.registeredBy, testUserIds));
+  } catch (error) {
+    console.error('Device cleanup error (non-fatal):', error);
+  }
+
+  // Step 5: Delete onprem status history + deployments created by test users
+  try {
+    const testDeployments = await db.query.onpremDeployments.findMany({
+      where: inArray(onpremDeployments.associatedCsmId, testUserIds),
+      columns: { id: true },
+    });
+    const deploymentIds = testDeployments.map((d) => d.id);
+    if (deploymentIds.length > 0) {
+      await db.delete(onpremStatusHistory).where(inArray(onpremStatusHistory.deploymentId, deploymentIds));
+    }
+    await db.delete(onpremDeployments).where(inArray(onpremDeployments.associatedCsmId, testUserIds));
+  } catch (error) {
+    console.error('OnPrem cleanup error (non-fatal):', error);
+  }
+
+  // Step 6: Delete audit logs + refresh tokens for test users
+  try {
+    await db.delete(auditLogs).where(inArray(auditLogs.userId, testUserIds));
+  } catch (error) {
+    console.error('Audit log cleanup error (non-fatal):', error);
+  }
+  try {
+    await db.delete(refreshTokens).where(inArray(refreshTokens.userId, testUserIds));
+  } catch (error) {
+    console.error('Refresh token cleanup error (non-fatal):', error);
+  }
+
+  // Step 7: Delete test users last
   try {
     await db.delete(users).where(like(users.email, '%@test.com'));
   } catch (error) {
-    // Ignore foreign key errors - some users might still be referenced
     console.error('User cleanup error (non-fatal):', error);
   }
 }
@@ -398,6 +381,15 @@ export async function setupTestUsers() {
 }
 
 export async function initializeTests() {
+  // Safety guard: refuse to run against non-test databases
+  const dbUrl = process.env.DATABASE_URL || '';
+  if (!dbUrl.includes('_test') && !dbUrl.includes('test_')) {
+    throw new Error(
+      `DANGER: Tests must run against a test database.\n` +
+      `Current DATABASE_URL points to: ${dbUrl.split('@').pop()}\n` +
+      `Create a test DB and set DATABASE_URL to one containing "_test" in the name.`
+    );
+  }
   await getApp();
   await cleanupTestData();
   await setupTestUsers();

@@ -18,8 +18,8 @@
     "db:push": "tsx node_modules/drizzle-kit/bin.cjs push",
     "db:studio": "tsx node_modules/drizzle-kit/bin.cjs studio",
     "db:seed": "tsx src/db/seed.ts",
-    "test": "vitest",
-    "test:run": "vitest run"
+    "test": "DATABASE_URL=postgres://admin:admin123@localhost:5432/knoxadmin_test vitest",
+    "test:run": "DATABASE_URL=postgres://admin:admin123@localhost:5432/knoxadmin_test vitest run"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1022.0",

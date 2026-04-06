@@ -104,6 +104,36 @@ describe('User Management API', () => {
       expect(body.data.some((u: { email: string }) => u.email.includes('admin'))).toBe(true);
     });
 
+    it('supports full-name search (firstName + lastName combined)', async () => {
+      const app = await getApp();
+      const { accessToken } = await loginUser(app, testUsers.admin.email, testUsers.admin.password);
+
+      // Create a user with a distinctive name
+      const uniqueFirst = `Zephyr${Date.now()}`;
+      const uniqueLast = `Quixote${Date.now()}`;
+      await createTestUser({
+        email: `fullname-search-${Date.now()}@test.com`,
+        firstName: uniqueFirst,
+        lastName: uniqueLast,
+        role: 'full_viewer',
+        password: 'testpass123',
+      }, 'accepted');
+
+      // Search by "FirstName LastName"
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/users?search=${encodeURIComponent(`${uniqueFirst} ${uniqueLast}`)}`,
+        headers: { authorization: `Bearer ${accessToken}` },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+      expect(body.data.length).toBeGreaterThan(0);
+      expect(body.data.some((u: { firstName: string; lastName: string }) =>
+        u.firstName === uniqueFirst && u.lastName === uniqueLast
+      )).toBe(true);
+    });
+
     it('supports role filter', async () => {
       const app = await getApp();
       const { accessToken } = await loginUser(app, testUsers.admin.email, testUsers.admin.password);

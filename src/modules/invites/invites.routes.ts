@@ -37,6 +37,8 @@ export async function inviteRoutes(app: FastifyInstance) {
                 'onprem_viewer',
                 'full_viewer',
                 'full_editor',
+                'devices_admin_onprem_viewer',
+                'onprem_admin_devices_viewer',
               ],
             },
           },

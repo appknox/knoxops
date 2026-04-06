@@ -13,6 +13,8 @@ describe('Authorization & Role-Based Access Control', () => {
     onpremViewer: { email: 'auth-onprem-viewer@test.com', role: 'onprem_viewer' as const },
     fullEditor: { email: 'auth-full-editor@test.com', role: 'full_editor' as const },
     fullViewer: { email: 'auth-full-viewer@test.com', role: 'full_viewer' as const },
+    devicesAdminOnpremViewer: { email: 'auth-devices-admin-onprem-viewer@test.com', role: 'devices_admin_onprem_viewer' as const },
+    onpremAdminDevicesViewer: { email: 'auth-onprem-admin-devices-viewer@test.com', role: 'onprem_admin_devices_viewer' as const },
   };
 
   const tokens: Record<string, string> = {};
@@ -75,6 +77,16 @@ describe('Authorization & Role-Based Access Control', () => {
       it('full_editor can create devices', async () => {
         const response = await createTestDevice(app, tokens.fullEditor);
         expect(response.statusCode).toBe(201);
+      });
+
+      it('devices_admin_onprem_viewer can create devices', async () => {
+        const response = await createTestDevice(app, tokens.devicesAdminOnpremViewer);
+        expect(response.statusCode).toBe(201);
+      });
+
+      it('onprem_admin_devices_viewer cannot create devices', async () => {
+        const response = await createTestDevice(app, tokens.onpremAdminDevicesViewer);
+        expect(response.statusCode).toBe(403);
       });
     });
 
@@ -141,6 +153,24 @@ describe('Authorization & Role-Based Access Control', () => {
         });
         expect(response.statusCode).toBe(200);
       });
+
+      it('devices_admin_onprem_viewer can list devices', async () => {
+        const response = await app.inject({
+          method: 'GET',
+          url: '/api/devices',
+          headers: { authorization: `Bearer ${tokens.devicesAdminOnpremViewer}` },
+        });
+        expect(response.statusCode).toBe(200);
+      });
+
+      it('onprem_admin_devices_viewer can list devices', async () => {
+        const response = await app.inject({
+          method: 'GET',
+          url: '/api/devices',
+          headers: { authorization: `Bearer ${tokens.onpremAdminDevicesViewer}` },
+        });
+        expect(response.statusCode).toBe(200);
+      });
     });
 
     describe('PUT /api/devices/:id - Update Device', () => {
@@ -195,6 +225,32 @@ describe('Authorization & Role-Based Access Control', () => {
 
         expect(response.statusCode).toBe(200);
       });
+
+      it('devices_admin_onprem_viewer can update devices', async () => {
+        const device = (await createTestDevice(app, tokens.admin)).json();
+
+        const response = await app.inject({
+          method: 'PUT',
+          url: `/api/devices/${device.id}`,
+          headers: { authorization: `Bearer ${tokens.devicesAdminOnpremViewer}` },
+          payload: { model: 'Updated' },
+        });
+
+        expect(response.statusCode).toBe(200);
+      });
+
+      it('onprem_admin_devices_viewer cannot update devices', async () => {
+        const device = (await createTestDevice(app, tokens.admin)).json();
+
+        const response = await app.inject({
+          method: 'PUT',
+          url: `/api/devices/${device.id}`,
+          headers: { authorization: `Bearer ${tokens.onpremAdminDevicesViewer}` },
+          payload: { model: 'Updated' },
+        });
+
+        expect(response.statusCode).toBe(403);
+      });
     });
 
     describe('DELETE /api/devices/:id - Delete Device', () => {
@@ -244,6 +300,30 @@ describe('Authorization & Role-Based Access Control', () => {
         });
 
         expect(response.statusCode).toBe(200);
+      });
+
+      it('devices_admin_onprem_viewer can delete devices', async () => {
+        const device = (await createTestDevice(app, tokens.admin)).json();
+
+        const response = await app.inject({
+          method: 'DELETE',
+          url: `/api/devices/${device.id}`,
+          headers: { authorization: `Bearer ${tokens.devicesAdminOnpremViewer}` },
+        });
+
+        expect(response.statusCode).toBe(200);
+      });
+
+      it('onprem_admin_devices_viewer cannot delete devices', async () => {
+        const device = (await createTestDevice(app, tokens.admin)).json();
+
+        const response = await app.inject({
+          method: 'DELETE',
+          url: `/api/devices/${device.id}`,
+          headers: { authorization: `Bearer ${tokens.onpremAdminDevicesViewer}` },
+        });
+
+        expect(response.statusCode).toBe(403);
       });
     });
   });
@@ -477,6 +557,26 @@ describe('Authorization & Role-Based Access Control', () => {
 
         expect(response.statusCode).toBe(403);
       });
+
+      it('devices_admin_onprem_viewer can list license requests', async () => {
+        const response = await app.inject({
+          method: 'GET',
+          url: `/api/onprem/${deploymentId}/license-requests`,
+          headers: { authorization: `Bearer ${tokens.devicesAdminOnpremViewer}` },
+        });
+
+        expect(response.statusCode).toBe(200);
+      });
+
+      it('onprem_admin_devices_viewer can list license requests', async () => {
+        const response = await app.inject({
+          method: 'GET',
+          url: `/api/onprem/${deploymentId}/license-requests`,
+          headers: { authorization: `Bearer ${tokens.onpremAdminDevicesViewer}` },
+        });
+
+        expect(response.statusCode).toBe(200);
+      });
     });
 
     describe('POST /api/onprem/:id/license-requests/:id/upload - Upload License File', () => {
@@ -665,6 +765,43 @@ describe('Authorization & Role-Based Access Control', () => {
       // Can create onprem deployment
       const onpremRes = await createTestOnpremDeployment(app, tokens.fullEditor);
       expect(onpremRes.statusCode).toBe(201);
+    });
+
+    it('devices_admin_onprem_viewer has read-write on devices and read-only on onprem', async () => {
+      // Can create/update/delete devices
+      const deviceRes = await createTestDevice(app, tokens.devicesAdminOnpremViewer);
+      expect(deviceRes.statusCode).toBe(201);
+
+      // Can read onprem
+      const deployment = (await createTestOnpremDeployment(app, tokens.admin)).json();
+      const readRes = await app.inject({
+        method: 'GET',
+        url: `/api/onprem/${deployment.id}`,
+        headers: { authorization: `Bearer ${tokens.devicesAdminOnpremViewer}` },
+      });
+      expect(readRes.statusCode).toBe(200);
+
+      // Cannot create onprem deployments
+      const createRes = await createTestOnpremDeployment(app, tokens.devicesAdminOnpremViewer);
+      expect(createRes.statusCode).toBe(403);
+    });
+
+    it('onprem_admin_devices_viewer has read-write on onprem and read-only on devices', async () => {
+      // Can create onprem deployment
+      const onpremRes = await createTestOnpremDeployment(app, tokens.onpremAdminDevicesViewer);
+      expect(onpremRes.statusCode).toBe(201);
+
+      // Can read devices
+      const readRes = await app.inject({
+        method: 'GET',
+        url: '/api/devices',
+        headers: { authorization: `Bearer ${tokens.onpremAdminDevicesViewer}` },
+      });
+      expect(readRes.statusCode).toBe(200);
+
+      // Cannot create devices
+      const createRes = await createTestDevice(app, tokens.onpremAdminDevicesViewer);
+      expect(createRes.statusCode).toBe(403);
     });
   });
 });

@@ -12,7 +12,7 @@ export const createDeviceSchema = z.object({
   description: z.string().optional(),
   // Operational fields (direct columns)
   purpose: z.string().max(100).optional(),
-  assignedTo: z.string().max(255).optional(),
+  assignedTo: z.string().max(255).nullable().optional(),
   // Device sale fields
   condition: z.string().max(50).optional(),
   conditionNotes: z.string().optional(),

@@ -15,10 +15,11 @@ const PLATFORM_PREFIX: Record<string, string> = {
 // Generate auto-assigned device name based on platform
 async function generateDeviceName(platform: string): Promise<string> {
   const prefix = PLATFORM_PREFIX[platform.toLowerCase()] ?? 'D';
+  // Include soft-deleted devices so names are never reused
   const existing = await db
     .select({ name: devices.name })
     .from(devices)
-    .where(and(sql`${devices.name} ~ ${`^${prefix}[0-9]+$`}`, eq(devices.isDeleted, false)));
+    .where(sql`${devices.name} ~ ${`^${prefix}[0-9]+$`}`);
 
   const nums = existing
     .map(r => parseInt(r.name.slice(prefix.length), 10))

@@ -1,4 +1,4 @@
-import { eq, and, ne, lt } from 'drizzle-orm';
+import { eq, and, ne, lt, notInArray } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { users, User, Role } from '../../db/schema/index.js';
 import { generateInviteToken } from '../../lib/jwt.js';
@@ -43,9 +43,9 @@ function mapUserToInvite(user: User): InviteResponse {
 export async function createInvite(params: CreateInviteParams): Promise<InviteResponse> {
   const email = params.email.toLowerCase();
 
-  // Check if user already exists (not soft-deleted)
+  // Check if user already exists
   const existingUser = await db.query.users.findFirst({
-    where: and(eq(users.email, email), ne(users.status, 'deleted')),
+    where: eq(users.email, email),
   });
 
   if (existingUser?.status === 'pending') {
@@ -60,31 +60,59 @@ export async function createInvite(params: CreateInviteParams): Promise<InviteRe
   inviteExpiresAt.setDate(inviteExpiresAt.getDate() + env.INVITE_EXPIRY_DAYS);
   const now = new Date();
 
-  const [newUser] = await db
-    .insert(users)
-    .values({
-      email,
-      firstName: params.firstName,
-      lastName: params.lastName,
-      role: params.role,
-      status: 'pending',
-      inviteToken,
-      inviteExpiresAt,
-      inviteLastSentAt: now,
-      invitedBy: params.invitedBy,
-      passwordHash: null,
-    })
-    .returning();
+  let newUser: User;
 
-  // Send invite email
-  await sendInviteEmail(email, inviteToken, params.inviterName, params.role);
+  if (existingUser?.status === 'deleted') {
+    // Reuse the existing deleted row instead of inserting (avoids unique constraint violation)
+    const [updated] = await db
+      .update(users)
+      .set({
+        firstName: params.firstName,
+        lastName: params.lastName,
+        role: params.role,
+        status: 'pending',
+        inviteToken,
+        inviteExpiresAt,
+        inviteLastSentAt: now,
+        invitedBy: params.invitedBy,
+        passwordHash: null,
+        updatedAt: now,
+      })
+      .where(eq(users.email, email))
+      .returning();
+    newUser = updated;
+  } else {
+    const [inserted] = await db
+      .insert(users)
+      .values({
+        email,
+        firstName: params.firstName,
+        lastName: params.lastName,
+        role: params.role,
+        status: 'pending',
+        inviteToken,
+        inviteExpiresAt,
+        inviteLastSentAt: now,
+        invitedBy: params.invitedBy,
+        passwordHash: null,
+      })
+      .returning();
+    newUser = inserted;
+  }
+
+  // Send invite email — non-fatal if SMTP is not configured
+  try {
+    await sendInviteEmail(email, inviteToken, params.inviterName, params.role);
+  } catch (err) {
+    console.warn('[Invites] Failed to send invite email (SMTP may not be configured):', err);
+  }
 
   return mapUserToInvite(newUser);
 }
 
 export async function listInvites(): Promise<InviteResponse[]> {
   const invites = await db.query.users.findMany({
-    where: ne(users.status, 'active'),
+    where: notInArray(users.status, ['active', 'deleted']),
   });
 
   return invites.map(mapUserToInvite);
@@ -195,7 +223,12 @@ export async function resendInvite(userId: string, inviterName: string): Promise
     })
     .where(eq(users.id, userId));
 
-  await sendInviteEmail(user.email, inviteToken, inviterName, user.role);
+  // Send invite email — non-fatal if SMTP is not configured
+  try {
+    await sendInviteEmail(user.email, inviteToken, inviterName, user.role);
+  } catch (err) {
+    console.warn('[Invites] Failed to send invite email (SMTP may not be configured):', err);
+  }
 }
 
 export async function acceptInviteViaSso(email: string): Promise<void> {
