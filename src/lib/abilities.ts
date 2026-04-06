@@ -43,6 +43,18 @@ export function defineAbilitiesFor(role: Role): AppAbility {
       can('read', 'AuditLog');
       break;
 
+    case 'devices_admin_onprem_viewer':
+      can('manage', 'Device');
+      can('read', 'OnPrem');
+      can('read', 'AuditLog');
+      break;
+
+    case 'onprem_admin_devices_viewer':
+      can('read', 'Device');
+      can('manage', 'OnPrem');
+      can('read', 'AuditLog');
+      break;
+
     default:
       cannot('manage', 'all');
   }

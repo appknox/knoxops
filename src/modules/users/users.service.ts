@@ -50,7 +50,8 @@ export async function listUsers(query: ListUsersQuery): Promise<PaginatedUsers> 
       or(
         ilike(users.email, `%${search}%`),
         ilike(users.firstName, `%${search}%`),
-        ilike(users.lastName, `%${search}%`)
+        ilike(users.lastName, `%${search}%`),
+        ilike(sql`${users.firstName} || ' ' || ${users.lastName}`, `%${search}%`)
       )
     );
   }

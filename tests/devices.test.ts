@@ -73,6 +73,28 @@ describe('Devices', () => {
       expect(device1.name).not.toBe(device2.name);
     });
 
+    it('should not reuse name of a soft-deleted device', async () => {
+      const response1 = await createTestDevice(app, adminToken, { platform: 'android' });
+      expect(response1.statusCode).toBe(201);
+      const device1 = response1.json();
+      expect(device1.name).toMatch(/^A\d{3}$/);
+
+      // Soft-delete that device
+      const deleteResponse = await app.inject({
+        method: 'DELETE',
+        url: `/api/devices/${device1.id}`,
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+      expect(deleteResponse.statusCode).toBe(200);
+
+      // Register a new Android device — should get the NEXT number, not reuse the deleted one
+      const response2 = await createTestDevice(app, adminToken, { platform: 'android' });
+      expect(response2.statusCode).toBe(201);
+      const device2 = response2.json();
+      expect(device2.name).toMatch(/^A\d{3}$/);
+      expect(device2.name).not.toBe(device1.name);
+    });
+
     it('should reject duplicate serial number', async () => {
       const serialNumber = `SN-UNIQUE-${Date.now()}`;
 
@@ -188,6 +210,39 @@ describe('Devices', () => {
       const logs = auditResponse.json().data;
       const assignmentLog = logs.find(log => log.action === 'assigned_to_changed');
       expect(assignmentLog).toBeDefined();
+    });
+
+    it('should clear assignedTo when set to null', async () => {
+      const createRes = await createTestDevice(app, adminToken);
+      const device = createRes.json();
+
+      // First assign someone
+      await app.inject({
+        method: 'PUT',
+        url: `/api/devices/${device.id}`,
+        headers: { authorization: `Bearer ${adminToken}` },
+        payload: { assignedTo: 'Jane Smith' },
+      });
+
+      // Now clear it with null
+      const clearResponse = await app.inject({
+        method: 'PUT',
+        url: `/api/devices/${device.id}`,
+        headers: { authorization: `Bearer ${adminToken}` },
+        payload: { assignedTo: null },
+      });
+
+      expect(clearResponse.statusCode).toBe(200);
+
+      // Verify it's actually null in the DB by fetching the device
+      const getResponse = await app.inject({
+        method: 'GET',
+        url: `/api/devices/${device.id}`,
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+
+      expect(getResponse.statusCode).toBe(200);
+      expect(getResponse.json().assignedTo).toBeNull();
     });
 
     it('should validate serial number uniqueness on update (excluding current)', async () => {

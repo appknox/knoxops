@@ -9,6 +9,8 @@ export const roleEnum = pgEnum('role', [
   'onprem_viewer',
   'full_viewer',
   'full_editor',
+  'devices_admin_onprem_viewer',
+  'onprem_admin_devices_viewer',
 ]);
 
 // User status enum
