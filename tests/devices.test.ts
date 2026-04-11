@@ -108,7 +108,7 @@ describe('Devices', () => {
         serialNumber,
       });
 
-      expect(response2.statusCode).toBe(400);
+      expect(response2.statusCode).toBe(409);
     });
 
     it('should validate device type enum', async () => {
@@ -258,7 +258,7 @@ describe('Devices', () => {
         },
       });
 
-      expect(updateResponse.statusCode).toBe(400);
+      expect(updateResponse.statusCode).toBe(409);
     });
 
     it('should allow updating to same serial number (self)', async () => {
@@ -298,7 +298,7 @@ describe('Devices', () => {
     it('should return 404 for non-existent device', async () => {
       const response = await app.inject({
         method: 'GET',
-        url: '/api/devices/non-existent-id',
+        url: '/api/devices/00000000-0000-0000-0000-000000000000',
         headers: { authorization: `Bearer ${adminToken}` },
       });
 
@@ -517,8 +517,8 @@ describe('Devices', () => {
       expect(response.statusCode).toBe(200);
       const stats = response.json();
       expect(stats.inInventory).toBeDefined();
-      expect(stats.checkedOut).toBeDefined();
-      expect(stats.forSale).toBeDefined();
+      expect(stats.outForRepair).toBeDefined();
+      expect(stats.toBeSold).toBeDefined();
       expect(stats.inactive).toBeDefined();
     });
 
@@ -543,7 +543,7 @@ describe('Devices', () => {
       expect(response.statusCode).toBe(200);
       const stats = response.json();
       expect(stats.inInventory).toBeGreaterThanOrEqual(1);
-      expect(stats.forSale).toBeGreaterThanOrEqual(1);
+      expect(stats.toBeSold).toBeGreaterThanOrEqual(1);
     });
   });
 

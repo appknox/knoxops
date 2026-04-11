@@ -133,7 +133,7 @@ export async function listDevices(query: ListDevicesQuery): Promise<PaginatedDev
       })
       .from(devices)
       .where(whereClause)
-      .orderBy(orderFn(sortColumn))
+      .orderBy(orderFn(sortColumn), asc(devices.id))
       .limit(limit)
       .offset(offset),
     db
@@ -330,7 +330,7 @@ export async function getDeviceStats(): Promise<DeviceStats> {
       case 'maintenance':
         stats.outForRepair = row.count;
         break;
-      case 'decommissioned':
+      case 'for_sale':
         stats.toBeSold = row.count;
         break;
       case 'checked_out':

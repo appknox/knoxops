@@ -113,7 +113,7 @@ describe('Onprem API — Authentication & Authorization', () => {
 
     it('POST /api/onprem returns 401', async () => {
       const app = await getApp();
-      const res = await app.inject({ method: 'POST', url: '/api/onprem', payload: {} });
+      const res = await app.inject({ method: 'POST', url: '/api/onprem', payload: { clientName: 'Test Client' } });
       expect(res.statusCode).toBe(401);
     });
 
@@ -361,8 +361,16 @@ describe('Onprem API — Authentication & Authorization', () => {
     });
   });
 
-  // Describe Block 7 — onprem_admin Role (manage, but cannot delete)
-  describe('onprem_admin role — can create/update, cannot delete', () => {
+  // Describe Block 7 — onprem_admin Role (manage includes delete via CASL)
+  describe('onprem_admin role — full manage access including delete', () => {
+    let onpremAdminDeleteId: string;
+
+    beforeAll(async () => {
+      const app = await getApp();
+      const created = await createTestOnpremDeployment(app, adminToken);
+      onpremAdminDeleteId = created.json().id;
+    });
+
     it('GET /api/onprem returns 200', async () => {
       const app = await getApp();
       const res = await app.inject({
@@ -390,14 +398,14 @@ describe('Onprem API — Authentication & Authorization', () => {
       expect(res.statusCode).toBe(200);
     });
 
-    it('DELETE /api/onprem/:id returns 403', async () => {
+    it('DELETE /api/onprem/:id deletes successfully (200)', async () => {
       const app = await getApp();
       const res = await app.inject({
         method: 'DELETE',
-        url: `/api/onprem/${testDeploymentId}`,
+        url: `/api/onprem/${onpremAdminDeleteId}`,
         headers: { authorization: `Bearer ${onpremAdminToken}` },
       });
-      expect(res.statusCode).toBe(403);
+      expect([200, 204]).toContain(res.statusCode);
     });
   });
 

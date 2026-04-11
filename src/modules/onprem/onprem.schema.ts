@@ -74,7 +74,7 @@ const licenseSchema = z
 
 export const createOnpremSchema = z.object({
   // Section 1: Client & Ownership (new fields)
-  clientName: z.string().min(1, 'Client name is required').max(255),
+  clientName: z.string().trim().min(1, 'Client name is required').max(255),
   clientStatus: clientStatusEnum.optional().default('active'),
   environmentType: environmentTypeEnum.optional().default('poc'),
   associatedCsmId: z.string().uuid('Must be a valid UUID').min(1, 'Associated CSM is required'),

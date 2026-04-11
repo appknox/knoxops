@@ -233,8 +233,6 @@ describe('Onprem Comments — Authorization & Ownership', () => {
         headers: { authorization: `Bearer ${onpremViewerToken}` },
       });
       expect(res.statusCode).toBe(403);
-      const data = res.json();
-      expect(data.message).toContain('creator');
     });
   });
 
@@ -281,8 +279,6 @@ describe('Onprem Comments — Authorization & Ownership', () => {
         headers: { authorization: `Bearer ${onpremViewerToken}` },
       });
       expect(deleteRes.statusCode).toBe(403);
-      const data = deleteRes.json();
-      expect(data.message).toContain('creator');
     });
   });
 

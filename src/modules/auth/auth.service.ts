@@ -224,8 +224,8 @@ export async function changePassword(
 
 export function getOidcAuthUrl(): string {
   const params = new URLSearchParams({
-    client_id: env.OIDC_CLIENT_ID,
-    redirect_uri: env.OIDC_CALLBACK_URL,
+    client_id: env.OIDC_CLIENT_ID!,
+    redirect_uri: env.OIDC_CALLBACK_URL!,
     response_type: 'code',
     scope: 'openid email profile',
     access_type: 'online',
@@ -240,9 +240,9 @@ export async function exchangeOidcCode(code: string): Promise<{ email: string; n
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       code,
-      client_id: env.OIDC_CLIENT_ID,
-      client_secret: env.OIDC_CLIENT_SECRET,
-      redirect_uri: env.OIDC_CALLBACK_URL,
+      client_id: env.OIDC_CLIENT_ID!,
+      client_secret: env.OIDC_CLIENT_SECRET!,
+      redirect_uri: env.OIDC_CALLBACK_URL!,
       grant_type: 'authorization_code',
     }).toString(),
   });

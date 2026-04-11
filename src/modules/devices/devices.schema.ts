@@ -24,8 +24,8 @@ export const createDeviceSchema = z.object({
 export const updateDeviceSchema = createDeviceSchema.partial();
 
 export const listDevicesQuerySchema = z.object({
-  page: z.coerce.number().min(1).optional().default(1),
-  limit: z.coerce.number().min(1).max(10000).optional().default(20),
+  page: z.coerce.number().optional().default(1).transform(v => Math.max(1, v)),
+  limit: z.coerce.number().optional().default(20).transform(v => Math.min(10000, Math.max(1, v))),
   search: z.string().optional(),
   type: z.enum(deviceTypeEnum.enumValues).optional(),
   status: z.enum(deviceStatusEnum.enumValues).optional(),
@@ -33,7 +33,7 @@ export const listDevicesQuerySchema = z.object({
   osVersion: z.string().optional(),
   purpose: z.string().optional(),
   assignedTo: z.string().optional(),
-  sortBy: z.enum(['name', 'createdAt', 'updatedAt', 'status', 'type']).optional().default('createdAt'),
+  sortBy: z.enum(['name', 'createdAt', 'updatedAt', 'status', 'type']).optional().default('name'),
   sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
 });
 

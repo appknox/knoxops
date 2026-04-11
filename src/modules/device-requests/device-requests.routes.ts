@@ -3,6 +3,48 @@ import { create, list, getById, approve, reject, complete } from './device-reque
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 
+const deviceRequestSchema = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    requestNo: { type: 'integer' },
+    requestedBy: { type: 'string', format: 'uuid' },
+    requestedByUser: {
+      type: 'object', nullable: true,
+      properties: { id: { type: 'string' }, firstName: { type: 'string' }, lastName: { type: 'string' }, email: { type: 'string' } },
+    },
+    deviceType: { type: 'string' },
+    platform: { type: 'string' },
+    osVersion: { type: 'string', nullable: true },
+    purpose: { type: 'string' },
+    requestingFor: { type: 'string', nullable: true },
+    additionalDetails: { type: 'string', nullable: true },
+    status: { type: 'string' },
+    rejectionReason: { type: 'string', nullable: true },
+    linkedDeviceId: { type: 'string', nullable: true },
+    approvedBy: { type: 'string', nullable: true },
+    approvedByUser: {
+      type: 'object', nullable: true,
+      properties: { id: { type: 'string' }, firstName: { type: 'string' }, lastName: { type: 'string' }, email: { type: 'string' } },
+    },
+    approvedAt: { type: 'string', format: 'date-time', nullable: true },
+    rejectedBy: { type: 'string', nullable: true },
+    rejectedByUser: {
+      type: 'object', nullable: true,
+      properties: { id: { type: 'string' }, firstName: { type: 'string' }, lastName: { type: 'string' }, email: { type: 'string' } },
+    },
+    rejectedAt: { type: 'string', format: 'date-time', nullable: true },
+    completedBy: { type: 'string', nullable: true },
+    completedByUser: {
+      type: 'object', nullable: true,
+      properties: { id: { type: 'string' }, firstName: { type: 'string' }, lastName: { type: 'string' }, email: { type: 'string' } },
+    },
+    completedAt: { type: 'string', format: 'date-time', nullable: true },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
+  },
+} as const;
+
 export async function deviceRequestRoutes(app: FastifyInstance) {
   // Create device request
   app.post(
@@ -29,9 +71,26 @@ export async function deviceRequestRoutes(app: FastifyInstance) {
           201: {
             type: 'object',
             properties: {
-              id: { type: 'string' },
+              id: { type: 'string', format: 'uuid' },
+              requestNo: { type: 'integer' },
+              requestedBy: { type: 'string', format: 'uuid' },
+              deviceType: { type: 'string' },
+              platform: { type: 'string' },
+              osVersion: { type: 'string', nullable: true },
+              purpose: { type: 'string' },
+              requestingFor: { type: 'string', nullable: true },
+              additionalDetails: { type: 'string', nullable: true },
               status: { type: 'string' },
+              rejectionReason: { type: 'string', nullable: true },
+              linkedDeviceId: { type: 'string', nullable: true },
+              approvedBy: { type: 'string', nullable: true },
+              approvedAt: { type: 'string', format: 'date-time', nullable: true },
+              rejectedBy: { type: 'string', nullable: true },
+              rejectedAt: { type: 'string', format: 'date-time', nullable: true },
+              completedBy: { type: 'string', nullable: true },
+              completedAt: { type: 'string', format: 'date-time', nullable: true },
               createdAt: { type: 'string', format: 'date-time' },
+              updatedAt: { type: 'string', format: 'date-time' },
             },
           },
         },
@@ -124,6 +183,8 @@ export async function deviceRequestRoutes(app: FastifyInstance) {
               pagination: {
                 type: 'object',
                 properties: {
+                  page: { type: 'integer' },
+                  limit: { type: 'integer' },
                   total: { type: 'integer' },
                 },
               },
@@ -152,9 +213,7 @@ export async function deviceRequestRoutes(app: FastifyInstance) {
           },
         },
         response: {
-          200: {
-            type: 'object',
-          },
+          200: deviceRequestSchema,
         },
       },
     },
@@ -178,9 +237,7 @@ export async function deviceRequestRoutes(app: FastifyInstance) {
           },
         },
         response: {
-          200: {
-            type: 'object',
-          },
+          200: deviceRequestSchema,
         },
       },
     },
@@ -211,9 +268,7 @@ export async function deviceRequestRoutes(app: FastifyInstance) {
           },
         },
         response: {
-          200: {
-            type: 'object',
-          },
+          200: deviceRequestSchema,
         },
       },
     },
@@ -243,9 +298,7 @@ export async function deviceRequestRoutes(app: FastifyInstance) {
           },
         },
         response: {
-          200: {
-            type: 'object',
-          },
+          200: deviceRequestSchema,
         },
       },
     },

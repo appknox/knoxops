@@ -1,22 +1,14 @@
-import { gte, lt, eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { devices } from '../db/schema/index.js';
 import { getDeviceWebhook } from './slack-notification.service.js';
 
-function todayRange() {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
-  return { start, end };
-}
-
-function getDateRange(date: Date) {
-  const start = new Date(date);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(date);
-  end.setHours(23, 59, 59, 999);
-  return { start, end };
+// Returns local date string 'YYYY-MM-DD' — used for timezone-safe date comparison
+function toLocalDateString(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function dateLabel(date?: Date) {
@@ -44,7 +36,7 @@ export interface CheckinDevice {
 }
 
 async function getCheckinsForDate(date: Date): Promise<CheckinDevice[]> {
-  const { start, end } = getDateRange(date);
+  const dateStr = toLocalDateString(date);
   return db
     .select({
       name: devices.name,
@@ -55,8 +47,7 @@ async function getCheckinsForDate(date: Date): Promise<CheckinDevice[]> {
     .from(devices)
     .where(
       and(
-        gte(devices.createdAt, start),
-        lt(devices.createdAt, end),
+        sql`${devices.createdAt}::date = ${dateStr}::date`,
         eq(devices.isDeleted, false)
       )
     )
@@ -155,7 +146,7 @@ async function getAllCheckouts(): Promise<CheckoutDevice[]> {
     .from(devices)
     .where(
       and(
-        inArray(devices.status, ['inactive', 'maintenance']),
+        inArray(devices.status, ['checked_out', 'maintenance']),
         eq(devices.isDeleted, false)
       )
     )
@@ -195,8 +186,8 @@ export async function sendDeviceCheckoutDigestForDate(date: Date): Promise<numbe
     const assignedTo = device.assignedTo ?? '—';
     const detail =
       device.status === 'maintenance'
-        ? `Out for Repair${device.purpose ? ` - ${device.purpose}` : ''}`
-        : device.purpose ?? '—';
+        ? `Out for Repair${device.purpose ? ` — ${device.purpose}` : ''}`
+        : `Checked Out${device.purpose ? ` — ${device.purpose}` : ''}`;
 
     blocks.push({
       type: 'section',

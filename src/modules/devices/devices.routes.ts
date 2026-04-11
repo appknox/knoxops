@@ -120,8 +120,8 @@ export async function deviceRoutes(app: FastifyInstance) {
         querystring: {
           type: 'object',
           properties: {
-            page: { type: 'integer', minimum: 1, default: 1 },
-            limit: { type: 'integer', minimum: 1, maximum: 10000, default: 20 },
+            page: { type: 'integer', default: 1 },
+            limit: { type: 'integer', default: 20 },
             search: { type: 'string' },
             type: {
               type: 'string',

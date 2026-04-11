@@ -30,10 +30,10 @@ const envSchema = z.object({
   FRONTEND_URL: z.string().url(),
 
   // OIDC (Google SSO)
-  OIDC_CLIENT_ID: z.string().min(1),
-  OIDC_CLIENT_SECRET: z.string().min(1),
+  OIDC_CLIENT_ID: z.string().min(1).optional(),
+  OIDC_CLIENT_SECRET: z.string().min(1).optional(),
   OIDC_ISSUER: z.string().url().default('https://accounts.google.com'),
-  OIDC_CALLBACK_URL: z.string().url(),
+  OIDC_CALLBACK_URL: z.string().url().optional(),
 
   // Invite expiry
   INVITE_EXPIRY_DAYS: z.coerce.number().int().positive().default(5),
