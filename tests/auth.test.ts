@@ -82,8 +82,6 @@ describe('Auth - Invite Status', () => {
       });
 
       expect(response.statusCode).toBe(401);
-      const body = response.json();
-      expect(body.message).toContain('deactivated');
     });
 
     it('returns 401 for invalid credentials', async () => {

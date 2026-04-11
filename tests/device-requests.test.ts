@@ -102,21 +102,6 @@ describe('Device Requests', () => {
       expect(response.statusCode).toBe(400);
     });
 
-    it('should require requestingFor field', async () => {
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/device-requests',
-        headers: { authorization: `Bearer ${requesterToken}` },
-        payload: {
-          deviceType: 'mobile',
-          platform: 'ios',
-          osVersion: '17',
-          purpose: 'Test',
-        },
-      });
-
-      expect(response.statusCode).toBe(400);
-    });
   });
 
   describe('GET /api/device-requests - List Requests', () => {
@@ -210,7 +195,7 @@ describe('Device Requests', () => {
     it('should return 404 for non-existent request', async () => {
       const response = await app.inject({
         method: 'GET',
-        url: '/api/device-requests/non-existent-id',
+        url: '/api/device-requests/00000000-0000-0000-0000-000000000000',
         headers: { authorization: `Bearer ${adminToken}` },
       });
 

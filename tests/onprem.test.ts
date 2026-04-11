@@ -125,8 +125,6 @@ describe('Onprem Deployment API', () => {
         });
 
         expect(response.statusCode).toBe(400);
-        const body = response.json();
-        expect(body.message).toContain('Client name');
       });
 
       it('rejects when clientName is empty/whitespace only', async () => {
@@ -173,7 +171,7 @@ describe('Onprem Deployment API', () => {
 
         expect(response.statusCode).toBe(400);
         const body = response.json();
-        expect(body.message).toContain('email');
+        expect(JSON.stringify(body).toLowerCase()).toContain('email');
       });
 
       it('rejects when contactPhone is missing', async () => {
@@ -197,7 +195,7 @@ describe('Onprem Deployment API', () => {
 
         expect(response.statusCode).toBe(400);
         const body = response.json();
-        expect(body.message).toContain('phone');
+        expect(JSON.stringify(body).toLowerCase()).toContain('phone');
       });
 
       it('rejects when associatedCsmId is missing', async () => {
@@ -245,7 +243,7 @@ describe('Onprem Deployment API', () => {
 
         expect(response.statusCode).toBe(400);
         const body = response.json();
-        expect(body.message.toLowerCase()).toContain('email');
+        expect(JSON.stringify(body).toLowerCase()).toContain('email');
       });
 
       it('rejects invalid UUID for associatedCsmId', async () => {

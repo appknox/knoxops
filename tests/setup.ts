@@ -58,7 +58,7 @@ vi.mock('../src/services/file.service.js', () => ({
 }));
 import { users, refreshTokens, auditLogs, onpremDeployments, onpremStatusHistory, devices, deviceRequests, onpremLicenseRequests, entityComments } from '../src/db/schema/index.js';
 import { hashPassword } from '../src/lib/password.js';
-import { eq, like, sql, inArray } from 'drizzle-orm';
+import { eq, like, sql, inArray, and } from 'drizzle-orm';
 import type { CreateOnpremInput } from '../src/modules/onprem/onprem.schema.js';
 
 let app: FastifyInstance;
@@ -268,13 +268,13 @@ export async function createTestLicenseRequest(
 ) {
   const startDate = new Date();
   const endDate = new Date();
-  endDate.setMonth(endDate.getMonth() + 3);
+  endDate.setMonth(endDate.getMonth() + 4); // 4 months to safely exceed 3-month minimum
 
   const defaultData = {
-    requestType: data.requestType || 'new',
+    requestType: data.requestType || 'license_renewal',
     targetVersion: data.targetVersion || '7.0.0',
-    licenseStartDate: data.licenseStartDate || startDate.toISOString().split('T')[0],
-    licenseEndDate: data.licenseEndDate || endDate.toISOString().split('T')[0],
+    licenseStartDate: data.licenseStartDate || startDate.toISOString(),
+    licenseEndDate: data.licenseEndDate || endDate.toISOString(),
     numberOfProjects: data.numberOfProjects || 5,
     fingerprint: data.fingerprint || 'test-fingerprint-123',
   };
@@ -287,6 +287,18 @@ export async function createTestLicenseRequest(
   });
 
   return response;
+}
+
+export async function cancelPendingLicenseRequestsForDeployment(deploymentId: string) {
+  await db
+    .update(onpremLicenseRequests)
+    .set({ status: 'cancelled', cancellationReason: 'Test cleanup' })
+    .where(
+      and(
+        eq(onpremLicenseRequests.deploymentId, deploymentId),
+        eq(onpremLicenseRequests.status, 'pending')
+      )
+    );
 }
 
 export async function cleanupTestData() {

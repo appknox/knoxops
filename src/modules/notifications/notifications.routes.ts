@@ -251,7 +251,18 @@ export async function notificationsRoutes(app: FastifyInstance) {
           200: {
             type: 'object',
             properties: {
-              devices: { type: 'array', items: { type: 'object' } },
+              devices: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string' },
+                    model: { type: 'string', nullable: true },
+                    purpose: { type: 'string', nullable: true },
+                    metadata: { type: 'object', nullable: true, additionalProperties: true },
+                  },
+                },
+              },
               count: { type: 'number' },
             },
           },
@@ -320,9 +331,10 @@ export async function notificationsRoutes(app: FastifyInstance) {
           deviceCount,
         });
       } catch (error) {
-        app.log.error('Error triggering device check-out digest:', error);
+        app.log.error({ err: error }, 'Error triggering device check-out digest');
         return reply.status(500).send({
           message: 'Failed to trigger device check-out digest',
+          detail: error instanceof Error ? error.message : String(error),
         });
       }
     }
@@ -352,7 +364,20 @@ export async function notificationsRoutes(app: FastifyInstance) {
           200: {
             type: 'object',
             properties: {
-              devices: { type: 'array', items: { type: 'object' } },
+              devices: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string' },
+                    model: { type: 'string', nullable: true },
+                    status: { type: 'string' },
+                    assignedTo: { type: 'string', nullable: true },
+                    purpose: { type: 'string', nullable: true },
+                    metadata: { type: 'object', nullable: true, additionalProperties: true },
+                  },
+                },
+              },
               count: { type: 'number' },
             },
           },

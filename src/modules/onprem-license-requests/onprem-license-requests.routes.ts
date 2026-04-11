@@ -48,7 +48,9 @@ export async function onpremLicenseRequestsRoutes(app: FastifyInstance) {
             type: 'object',
             properties: {
               id: { type: 'string', format: 'uuid' },
+              deploymentId: { type: 'string', format: 'uuid' },
               requestNo: { type: 'integer' },
+              requestType: { type: 'string' },
               status: { type: 'string' },
               createdAt: { type: 'string', format: 'date-time' },
             },
