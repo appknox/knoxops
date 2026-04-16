@@ -33,7 +33,7 @@ export const listDevicesQuerySchema = z.object({
   osVersion: z.string().optional(),
   purpose: z.string().optional(),
   assignedTo: z.string().optional(),
-  sortBy: z.enum(['name', 'createdAt', 'updatedAt', 'status', 'type']).optional().default('name'),
+  sortBy: z.enum(['name', 'createdAt', 'updatedAt', 'status', 'type']).optional().default('updatedAt'),
   sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
 });
 

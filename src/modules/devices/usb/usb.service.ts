@@ -195,7 +195,7 @@ export async function fetchIosDeviceInfo(udid: string): Promise<DeviceInfo> {
         info.udid = value;
         break;
       case 'ModelNumber':
-        info.modelNumber = value.replace(/[\/\\].*$/, '').trim(); // strip suffix like J/A
+        info.modelNumber = value.trim();
         break;
       case 'CPUArchitecture': {
         // ideviceinfo returns lowercase (arm64, arm64e) — normalize to match form dropdown
@@ -209,6 +209,9 @@ export async function fetchIosDeviceInfo(udid: string): Promise<DeviceInfo> {
       // DeviceColor returns Apple internal codes (e.g. "1", "3") not human-readable names — skip
       case 'InternationalMobileEquipmentIdentity':
         info.imei = value;
+        break;
+      case 'InternationalMobileEquipmentIdentity2':
+        info.imei2 = value;
         break;
       case 'IntegratedCircuitCardIdentity':
         info.simNumber = value;

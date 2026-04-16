@@ -1,4 +1,5 @@
-import { pgTable, uuid, varchar, timestamp, text, jsonb, pgEnum, boolean, numeric } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, text, jsonb, pgEnum, boolean, numeric, uniqueIndex } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { users } from './users.js';
 
 // Device status enum
@@ -28,7 +29,7 @@ export const deviceTypeEnum = pgEnum('device_type', [
 export const devices = pgTable('devices', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: varchar('name', { length: 255 }).notNull(),
-  serialNumber: varchar('serial_number', { length: 100 }).unique(),
+  serialNumber: varchar('serial_number', { length: 100 }),
   type: deviceTypeEnum('type').notNull(),
   status: deviceStatusEnum('status').notNull().default('in_inventory'),
   manufacturer: varchar('manufacturer', { length: 100 }),
@@ -49,7 +50,12 @@ export const devices = pgTable('devices', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
   isDeleted: boolean('is_deleted').default(false),
-});
+}, (table) => [
+  // Partial unique index: only enforce serial number uniqueness among non-deleted devices
+  uniqueIndex('devices_serial_number_active_unique')
+    .on(table.serialNumber)
+    .where(sql`${table.serialNumber} IS NOT NULL AND ${table.isDeleted} = false`),
+]);
 
 // Types
 export type Device = typeof devices.$inferSelect;
