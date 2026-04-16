@@ -2,6 +2,12 @@ import express from 'express';
 import cors from 'cors';
 import { execFile as execFileCallback } from 'child_process';
 import { promisify } from 'util';
+import { deviceByIdentifier } from 'ios-device-list';
+
+function resolveIosModelName(productType) {
+  const matches = deviceByIdentifier(productType);
+  return matches?.[0]?.Generation ?? productType;
+}
 
 const execFile = promisify(execFileCallback);
 const PORT = process.env.PORT || 17392;
@@ -139,6 +145,8 @@ function parseIdeviceInfo(output) {
     rom: null,
   };
 
+  let regionInfo = null;
+
   for (const line of output.split('\n')) {
     const [key, ...rest] = line.split(':');
     if (!key || rest.length === 0) continue;
@@ -146,11 +154,12 @@ function parseIdeviceInfo(output) {
 
     switch (key.trim()) {
       case 'DeviceName':        info.name = value; break;
-      case 'ProductType':       info.model = value; break;
+      case 'ProductType':       info.model = resolveIosModelName(value); break;
       case 'ProductVersion':    info.osVersion = value; break;
       case 'SerialNumber':      info.serialNumber = value; break;
       case 'UniqueDeviceID':    info.udid = value; break;
-      case 'ModelNumber':       info.modelNumber = value.replace(/[\/\\].*$/, '').trim(); break;
+      case 'ModelNumber':       info.modelNumber = value; break;
+      case 'RegionInfo':        regionInfo = value; break;
       case 'CPUArchitecture': {
         const arch = value.toLowerCase();
         if (arch.includes('arm64') || arch.includes('aarch64')) info.cpuArch = 'ARM64';
@@ -159,11 +168,17 @@ function parseIdeviceInfo(output) {
         else info.cpuArch = value;
         break;
       }
-      case 'InternationalMobileEquipmentIdentity':  info.imei = value; break;
-      case 'IntegratedCircuitCardIdentity':         info.simNumber = value; break;
-      case 'WiFiAddress':                           info.macAddress = value; break;
-      case 'BuildVersion':                          info.rom = value; break;
+      case 'InternationalMobileEquipmentIdentity':   info.imei = value; break;
+      case 'InternationalMobileEquipmentIdentity2':  info.imei2 = value; break;
+      case 'IntegratedCircuitCardIdentity':          info.simNumber = value; break;
+      case 'WiFiAddress':                            info.macAddress = value; break;
+      case 'BuildVersion':                           info.rom = value; break;
     }
+  }
+
+  // Combine ModelNumber + RegionInfo to match what iOS shows in About (e.g. MT302LL/A)
+  if (info.modelNumber && regionInfo) {
+    info.modelNumber = `${info.modelNumber}${regionInfo}`;
   }
 
   return info;

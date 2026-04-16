@@ -15,6 +15,13 @@
       "when": 1774866599590,
       "tag": "0022_role_mixed_access",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1745813000000,
+      "tag": "0023_serial_partial_unique",
+      "breakpoints": true
     }
   ]
 }
